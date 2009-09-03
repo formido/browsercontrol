@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+
+<window id="main" title="XrHttpd" width="300" height="300"
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+
+  <script type="application/x-javascript" src="quit.js"/>
+  <script type="application/x-javascript;version=1.7" src="httpd.js"/>
+  <script type="application/x-javascript;version=1.7" src="server.js"/>
+
+  <button label="quit" oncommand="goQuitApplication()"/>
+</window>

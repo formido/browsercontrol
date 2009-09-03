@@ -1,0 +1,57 @@
+<html>
+  <head>
+    <title>Framerunner</title>
+    <link rel="stylesheet" type="text/css" href="framerunner.css"></link>
+    <script type="text/javascript" src="MochiKit/MochiKit.js"></script>
+    <script type="text/javascript" src="testrunner.js"></script>
+    <!-- innerText.js requires jQuery -->
+    <script type="text/javascript" src="jquery-1.2.3.js"></script>
+    <script type="text/javascript">
+         jQuery.noConflict();
+    </script>
+    <script type="text/javascript" src="innerText.js"></script>
+  </head>
+  <body>
+
+    <div class="container">
+
+      <div class="status">
+        <ul>
+          <li>test_index: <span id="status-test_index"></span></li>
+          <li>test_count: <span id="status-test_count"></span></li>
+          <li>percent: <span id="status-percent"></span></li>
+          <li>time_elapsed: <span id="status-time_elapsed"></span></li>
+          <li>time_est_remaining: <span id="status-time_est_remaining"></span></li>
+          <li>time_est_total: <span id="status-time_est_total"></span></li>
+        </ul>
+      </div>
+
+      <div class="status">
+        <ul>
+          <li>test_id: <span id="status-test_id"></span></li>
+          <li><b>url: <span id="status-url"></span></b></li>
+        </ul>
+      </div>
+
+      <div class="clear"></div>
+
+      <div class="frameholder">
+        <iframe scrolling="no" frameborder="0" id="testframe"></iframe>
+      </div>
+      <div class="clear"></div>
+
+      <div class="toggle">
+        <a href="#" id="wantsUrl">wantsUrl</a>
+        <a href="#" id="loadred">loadred</a>
+        <a href="#" id="abort">abort</a>
+        <a href="#" id="haltTests">haltTests</a>
+        <a href="#" id="clear">clear</a>
+        <a href="#" id="sendMessage">sendMessage</a>
+      </div>
+
+      <div id="messages">
+      </div>
+
+    </div>
+  </body>
+</html>
