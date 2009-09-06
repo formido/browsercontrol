@@ -1,0 +1,199 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html lang="en">
+<head>
+  <title>W3TestRunner</title>
+  <link rel="stylesheet" type="text/css" href="/static/harness.css"></link>
+  <script type="text/javascript" src="/MochiKit/packed.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/TestRunner.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/setup.js"></script>
+  <script type="text/javascript" src="/static/jquery-1.2.3.js"></script>
+  <script type="text/javascript">
+  jQuery.noConflict();
+
+  var gTestList = [];
+
+  function buildTestList(tests) {
+    jQuery(tests).filter(function() {
+      return this.type == "mochitest" || this.type == "reftest";
+    }).each(function() {
+      var test = this;
+      var testURL = test.testURL = "/" + test.full_id;
+
+      var tr = document.createElement("tr");
+      tr.id = "tr-" + testURL;
+      jQuery(tr).append("<td>0</td>");
+      jQuery(tr).append("<td>0</td>");
+      jQuery(tr).append("<td>0</td>");
+      jQuery(tr).append("<td style='visibility: hidden'>" +
+                        "<a href='#'>image1</a>&nbsp;" +
+                        "<a href='#'>image2</a>&nbsp;" +
+                        "<a href='#'>diff</a>" +
+                        "</td>");
+      jQuery(tr).append("<td></td>");
+
+      var link = document.createElement("a");
+      if (test.type == "reftest") {
+        // TODO: link to the files being compared instead of the manifest.
+        link.href = "/" + test.full_id.split(":")[0] + ".list";
+      } else {
+        link.href = testURL;
+      }
+      link.innerHTML = testURL;
+      jQuery(tr).find("td:last").append(link);
+
+      jQuery("#test-table").append(tr);
+
+      gTestList.push(test);
+    });
+    log("Tests", gTestList);
+  };
+
+  function log(msg) {
+    if (!params.debug)
+      return;
+
+    jQuery("#log").show();
+    var str = "";
+    for (var i = 0; i < arguments.length; i++) {
+      str += arguments[i] + " ";
+    }
+    jQuery("#log").append(str + "<br>");
+
+    if (window.console && console.log) {
+      try {
+        console.log.apply('', arguments);
+      } catch (e) {}
+    }
+  };
+
+  function sendMessage(clientMessage, callback) {
+    log("=== Sending client message to server (type: " +
+        clientMessage.type + ")===");
+    var json = MochiKit.Base.serializeJSON(clientMessage);
+
+    // workaround for bug http://trac.mochikit.com/ticket/313
+    // YYY check if the current MochiKit code has the fix.
+    // IE does not recognize vertical tab literal "\v", so use the unicode escape.
+    json = json.replace(/\u000b/g, "\\u000b");
+
+    // Safari 3 on Windows sometimes get confused when using a relative path here.
+    // So use an absolute one.
+    var deferred = MochiKit.Async.doXHR("/testservice", {
+      method: "POST",
+      sendContent: json
+    });
+
+    deferred.addCallbacks(function(req) {
+      log("Got response");
+      var serverMessage = eval("(" + req.responseText + ")");
+      log(serverMessage);
+      if (serverMessage.type == "error") {
+        TestRunner._stopAndShowFailure(serverMessage.error_msg);
+        return;
+      }
+      callback(serverMessage);
+    }, function() {
+      log("FAIL");
+      TestRunner._stopAndShowFailure("XHR error");
+    });
+  };
+
+  function getTests() {
+    sendMessage({
+      type: "get_tests",
+    }, function(serverMessage) {
+      buildTestList(serverMessage.tests);
+    });
+  };
+
+  connect(window, 'onload', hookup);
+  connect(window, 'onload', getTests);
+
+  </script>
+  <style>
+  html {
+    font-family: Verdana, sans;
+    font-size: small;
+  }
+  #framelocator {
+    background-color: blue;
+    height: 20px;
+    width: 502px; // Width of the frame border box
+  }
+  #testframe {
+    border: 1px lime solid;
+  }
+  #log {
+    position: absolute;
+    width: 40em;
+    right: 10px;
+    border: 1px black dashed;
+    padding: 5px;
+    white-space: pre;
+    background-color: white;
+  }
+  #image-viewer-container {
+    background-color: gray;
+    border: thick solid #eee;
+    -moz-border-radius: 20px;
+    border-radius: 20px;
+    margin: 3em;
+    padding: 5em;
+    position: fixed;
+    display: none;
+    top: 20px;
+    left: 20px;
+  }
+  #image-viewer-container div {
+    margin-bottom: 3em;
+  }
+  #image-viewer-container img {
+    border: 1px lime solid;
+  }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>--><a href="#" id="runtests">Run Tests</a><--</h2>
+  <p style="float: right;">
+    <small>Based on the <a href="http://www.mochikit.com/">MochiKit</a>unit tests.</small>
+  </p>
+  <div class="status"><h1 id="indicator">Status</h1>
+  <h2 id="pass">Passed: <span id="pass-count">0</span></h2>
+  <h2 id="fail">Failed: <span id="fail-count">0</span></h2>
+  <h2 id="fail">Todo: <span id="todo-count">0</span></h2>
+</div>
+<div class="clear"></div>
+
+<div id="log" style="display: none;">
+</div>
+
+<div id="current-test"><b>Currently Executing: <span id="current-test-path">_</span></b></div>
+<div class="clear"></div>
+<div class="frameholder">
+  <div id="framelocator"></div>
+  <iframe scrolling="no" frameborder="0" id="testframe" width="500" height="300"></iframe>
+</div>
+<div class="clear"></div>
+<div class="toggle"><a href="#" id="toggleNonTests">Show Non-Tests</a>
+<br></br>
+</div>
+<table cellpadding="0" cellspacing="0" id="test-table">
+  <tr>
+    <td>Passed</td>
+    <td>Failed</td>
+    <td>Todo</td>
+    <td>Details</td>
+    <td>Test Files</td>
+  </tr>
+</table>
+<div class="clear"></div>
+</div>
+
+<div id="image-viewer-container" onclick="$('image-viewer-container').style.display='none'; return false;">
+  <div>click on the image to close</div>
+  <img id="image-viewer"></img>
+</div>
+
+</body>
+</html>

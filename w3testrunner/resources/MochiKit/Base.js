@@ -742,12 +742,14 @@ MochiKit.Base.update(MochiKit.Base, {
             }
             return MochiKit.Base.reprRegistry.match(o);
         } catch (e) {
-            // XXXsyp added typeof object check for Opera
-            if (typeof(o) == "object" && typeof(o.NAME) == 'string' && (
-                    o.toString == Function.prototype.toString ||
-                    o.toString == Object.prototype.toString
-                )) {
-                return o.NAME;
+            try {
+                if (typeof(o.NAME) == 'string' && (
+                        o.toString == Function.prototype.toString ||
+                        o.toString == Object.prototype.toString
+                    )) {
+                    return o.NAME;
+                }
+            } catch (e) {
             }
         }
         try {
