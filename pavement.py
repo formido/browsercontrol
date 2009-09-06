@@ -1,5 +1,7 @@
 from setuptools import find_packages
 import glob
+import platform
+import os
 
 from paver.easy import *
 from paver.setuputils import find_package_data
@@ -12,6 +14,13 @@ except ImportError:
     pass
 
 setuputils.install_distutils_tasks()
+
+if sys.platform in ("win32", "cygwin"):
+    platform = "win"
+elif sys.platform == "linux2":
+    platform = "lin"
+else:
+    platform = "mac"
 
 install_requires = [
     'nose',
@@ -29,7 +38,7 @@ except ImportError:
     # Python < 2.6
     install_requires.append("simplejson")
 
-if sys.platform == "darwin":
+if platform == "mac":
     install_requires.append('appscript')
 
 options(
@@ -54,8 +63,35 @@ options(
     ),
     virtualenv=Bunch(
         packages_to_install=["."],
+        paver_command_line="post_install",
     ),
 )
+
+@task
+def post_install():
+    if platform == "win":
+        bin_dir = 'Scripts'
+    else:
+        bin_dir = 'bin'
+    easy_install = os.path.join(bin_dir, 'easy_install')
+    # Try to run it from $PATH
+    if not os.path.exists(easy_install):
+        easy_install = "easy_install"
+
+    has_pil = False
+    try:
+        import Image
+        has_pil = True
+    except ImportException, e:
+        pass
+
+    if not has_pil:
+        if platform == "win":
+            # PIL fails to install on Windows. It should be installed manually.
+            log.info("You should install PIL from http://www.pythonware.com/products/pil/")
+        else:
+            sh("%s --find-links http://www.pythonware.com/products/pil/ Imaging" %
+               easy_install)
 
 @task
 @needs(['paver.virtual.bootstrap'])
