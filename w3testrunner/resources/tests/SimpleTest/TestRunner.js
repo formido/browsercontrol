@@ -132,7 +132,7 @@ TestRunner._stopAndShowFailure = function(message, errorImagePath) {
   indicator.style.backgroundColor = "#FFA500";
   if (errorImagePath) {
     indicator.innerHTML += " <a href='/reftest_results/" + errorImagePath +
-                           "'>View screenshot</a>";
+                           "' target=blank>View screenshot</a>";
   }
 }
 

@@ -358,16 +358,19 @@ class Reftest(ImportedTest):
         assert self.file_based, "Should only called for file based tests"
 
     @classmethod
-    def _build_testid(cls, manifest_path, line):
+    def _build_testid(cls, manifest_path, line, use_hash=True):
         if not cls.hash_id:
-            return cls._build_full_id(manifest_path, line)
+            use_hash = False
         dir, file = os.path.split(manifest_path)
-        return joinposix(dir, "reftest:%s" % hashlib.md5(line).hexdigest())
+        paths = ["reftest:%s" % (hashlib.md5(line).hexdigest() if use_hash
+                                 else line)]
+        if dir:
+            paths.insert(0, dir)
+        return joinposix(*paths)
 
     @classmethod
     def _build_full_id(cls, manifest_path, line):
-        dir, file = os.path.split(manifest_path)
-        return joinposix(dir, "reftest:%s" % line)
+        return cls._build_testid(manifest_path, line, False)
 
     @classmethod
     def _line_to_itest(cls, manifest_path, line, path="", line_no=-1):
@@ -643,14 +646,18 @@ class Reftest(ImportedTest):
             u = reftest[prop_url]
             if not u or self._is_special_scheme(u):
                 continue
-            reftest[prop_url] = SERVER_URL + self.directory + "/" + u
+            reftest[prop_url] = SERVER_URL + \
+                ((self.directory + "/") if self.directory else "") + u
         for prop_file in ("file", "file2"):
             f = reftest[prop_file]
             reftest[prop_file] = ""
             if not f or self._is_special_scheme(f):
                 continue
             # posix style because it is stored in db
-            reftest[prop_file] = self.directory + "/" + f
+            if self.directory:
+                reftest[prop_file] = joinposix(self.directory, f)
+            else:
+                reftest[prop_file] = f
             assert os.path.isfile(join(self.tests_dir, reftest[prop_file])), \
                     "Reftest manifest in directory '%s' references non existing file %s" % \
                     (self.directory, f)
