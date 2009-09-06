@@ -27,9 +27,6 @@ WEBAPP_PORT = 8888
 XR_HTTPD_HOST = "localhost:8889"
 XR_HTTPD_BASEURL = "http://%s/" % XR_HTTPD_HOST
 
-# YYY guess this from the package path
-XR_PATH = r"C:\cygwin\home\sypasche\projects\browsertests\browsertests\xulrunner\xulrunner\xulrunner.exe"
-
 class Message(object):
     def __str__(self):
         return "<%s, type: %s>" % (self.__class__.__name__, self.type)
@@ -64,7 +61,7 @@ class ServerMessage(Message):
 
         json_keys = set(["type", "url", "test_id", "test_index", "test_count",
                          "percent", "time_elapsed", "time_est_remaining",
-                         "time_est_total", "error_msg"])
+                         "time_est_total", "error_msg", "error_image_path"])
         d = {}
         d.update(dict((k, v) for (k, v) in self.__class__.__dict__.iteritems()
                              if k in json_keys))
@@ -133,7 +130,7 @@ class WebApp(object):
         self.log.debug("SERVER %s", self.server)
 
         self.server.running = True
-        self.log.debug('Serving on http://localhost:%s' % WEBAPP_PORT)
+        self.log.info('Serving on http://localhost:%s' % WEBAPP_PORT)
 
         #server.serve_forever()
         self.server.stopped = False
@@ -165,6 +162,9 @@ class WebApp(object):
         server_msg = ServerMessage()
         server_msg.type = "error"
         server_msg.error_msg = str(exception)
+        if (isinstance(exception, ImageCompareException) and
+            exception.error_image_path):
+            server_msg.error_image_path = exception.error_image_path
         return Response(server_msg.dump_json())(environ, start_response)
 
     def handle_client_message(self, environ, start_response):

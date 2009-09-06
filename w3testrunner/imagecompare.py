@@ -11,7 +11,9 @@ import tempfile
 log = logging.getLogger(__name__)
 
 class ImageCompareException(Exception):
-    pass
+    def __init__(self, message, error_image_path=None):
+        super(ImageCompareException, self).__init__(message)
+        self.error_image_path = error_image_path
 
 # These values should match the HTML test runner configuration.
 FRAME_HEIGHT = 300
@@ -151,8 +153,16 @@ class ImageComparator(object):
                                                               frame_border):
                         return frame_border
 
+        error_image_path = "error.png"
+        if not os.path.isdir(self.results_path):
+            os.makedirs(self.results_path)
+        path = os.path.join(self.results_path, error_image_path)
+        log.debug("Saving error images to %s", path)
+        image.save(path)
+
         raise ImageCompareException("Frame border not found "
-                                    "(is the browser window covered?)")
+                                    "(is the browser window covered?)",
+                                    error_image_path)
 
     def _is_frame_border_well_positionned(self, image, frame_border):
         framelocator_box = (frame_border[0], frame_border[1] - FRAMELOCATOR_HEIGHT,
@@ -210,12 +220,9 @@ class ImageComparator(object):
                            bottom - FRAME_BORDER))
 
     def grab_image1(self):
-        #assert not self.image1
-        #assert not self.image2
         self.image1 = self._grab_image()
 
     def grab_image2(self):
-        #assert not self.image2
         self.image2 = self._grab_image()
 
     def compare_images(self):

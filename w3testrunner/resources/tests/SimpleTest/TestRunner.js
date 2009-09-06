@@ -123,13 +123,17 @@ TestRunner.runTests = function (tests) {
     TestRunner.runNextTest();
 };
 
-TestRunner._stopAndShowFailure = function(message) {
+TestRunner._stopAndShowFailure = function(message, errorImagePath) {
   TestRunner._haltTests = true;
   TestRunner.runNextTest();
 
   var indicator = $("indicator");
   indicator.innerHTML = "Harness Failure: " + message;
   indicator.style.backgroundColor = "#FFA500";
+  if (errorImagePath) {
+    indicator.innerHTML += " <a href='/reftest_results/" + errorImagePath +
+                           "'>View screenshot</a>";
+  }
 }
 
 var currentReftest = null;

@@ -88,7 +88,8 @@
       var serverMessage = eval("(" + req.responseText + ")");
       log(serverMessage);
       if (serverMessage.type == "error") {
-        TestRunner._stopAndShowFailure(serverMessage.error_msg);
+        TestRunner._stopAndShowFailure(serverMessage.error_msg,
+                                       serverMessage.error_image_path);
         return;
       }
       callback(serverMessage);

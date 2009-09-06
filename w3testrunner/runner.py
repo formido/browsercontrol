@@ -16,13 +16,14 @@ log = logging.getLogger(__name__)
 class Runner(object):
     def __init__(self, options, tests_path):
         self.options = options
-        self.tests_path = tests_path
+        # tests_path shouldn't contain a trailing slash.
+        self.tests_path = tests_path.rstrip("\\/")
         self.webapp = None
         self.tests = self._get_tests()
 
     def main(self):
         if not self.tests:
-            log.info("No tests to run, aborting...")
+            log.error("No tests to run, aborting...")
             return
 
         self.webapp = WebApp(self, debug=self.options.debug,

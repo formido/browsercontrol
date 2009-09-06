@@ -82,7 +82,7 @@ def post_install():
     try:
         import Image
         has_pil = True
-    except ImportException, e:
+    except ImportError, e:
         pass
 
     if not has_pil:
