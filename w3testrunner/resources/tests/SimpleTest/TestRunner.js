@@ -316,7 +316,9 @@ TestRunner.countResults = function(doc) {
 }
 
 TestRunner.updateUI = function() {
-  var results = TestRunner.countResults($('testframe').contentDocument);
+  var testFrame = $('testframe');
+  var results = TestRunner.countResults(testFrame.contentDocument ||
+                                        testFrame.contentWindow.document);
   var passCount = parseInt($("pass-count").innerHTML) + results.OK;
   var failCount = parseInt($("fail-count").innerHTML) + results.notOK;
   var todoCount = parseInt($("todo-count").innerHTML) + results.todo;
