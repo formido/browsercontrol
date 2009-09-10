@@ -17,15 +17,11 @@ except ImportError:
 
 from webob import Request, Response
 from paste.urlparser import StaticURLParser
-from paste.proxy import TransparentProxy
 import paste.httpserver
 
 from w3testrunner.imagecompare import ImageComparator, ImageCompareException
 
 WEBAPP_PORT = 8888
-
-XR_HTTPD_HOST = "localhost:8889"
-XR_HTTPD_BASEURL = "http://%s/" % XR_HTTPD_HOST
 
 class Message(object):
     def __str__(self):
