@@ -76,6 +76,35 @@ class WebAppException(Exception):
     def __str__(self):
         return self.message
 
+class MimeUpdaterMiddleware(object):
+    def __init__(self, application, mime_mappings):
+        self.application = application
+        self.mime_mappings = mime_mappings
+
+    def __call__(self, environ, start_response):
+        def start_mime_update(status, response_headers, exc_info=None):
+            ext = os.path.splitext(environ["SCRIPT_NAME"])[1].lower()[1:]
+
+            if ext in self.mime_mappings:
+                response_headers = [(name,value) for name, value in
+                                    response_headers
+                                    if name.lower() != "content-type"]
+                response_headers.append(("Content-Type",
+                                         self.mime_mappings[ext]))
+
+            return start_response(status, response_headers, exc_info)
+
+        return self.application(environ, start_mime_update)
+
+# See also: http://mxr.mozilla.org/mozilla-central/source/testing/mochitest/server.js#195
+MIME_MAPPINGS = {
+    "xul": "application/vnd.mozilla.xul+xml",
+    "jar": "application/x-jar",
+    "ogg": "application/ogg",
+    "ogv": "video/ogg",
+    "oga": "audio/ogg",
+}
+
 class WebApp(object):
     def __init__(self, runner=None, debug=False, tests_path=None):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -86,8 +115,11 @@ class WebApp(object):
         self.tests_path = tests_path
 
         self.pkg_dir = os.path.dirname(os.path.abspath(__file__))
+
         # Use 1min of max age to avoid using cached files after an update.
-        self.mainapp = StaticURLParser(self.tests_path, cache_max_age=60)
+        self.mainapp = MimeUpdaterMiddleware(StaticURLParser(self.tests_path,
+                                                             cache_max_age=60),
+                                             MIME_MAPPINGS)
 
         self.resourcesapp = StaticURLParser(os.path.join(self.pkg_dir,
                                                          "resources"),
