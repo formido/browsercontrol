@@ -1,200 +1,200 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
   <title>W3TestRunner</title>
-  <link rel="stylesheet" type="text/css" href="/static/harness.css"></link>
-  <script type="text/javascript" src="/MochiKit/packed.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/TestRunner.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/setup.js"></script>
-  <script type="text/javascript" src="/static/jquery-1.2.3.js"></script>
-  <script type="text/javascript">
-  jQuery.noConflict();
-
-  var gTestList = [];
-
-  function buildTestList(tests) {
-    jQuery(tests).filter(function() {
-      return this.type == "mochitest" || this.type == "reftest";
-    }).each(function() {
-      var test = this;
-      var testURL = test.testURL = "/" + test.full_id;
-
-      var tr = document.createElement("tr");
-      tr.id = "tr-" + testURL;
-      jQuery(tr).append("<td>0</td>");
-      jQuery(tr).append("<td>0</td>");
-      jQuery(tr).append("<td>0</td>");
-      jQuery(tr).append("<td style='visibility: hidden'>" +
-                        "<a href='#'>image1</a>&nbsp;" +
-                        "<a href='#'>image2</a>&nbsp;" +
-                        "<a href='#'>diff</a>" +
-                        "</td>");
-      jQuery(tr).append("<td></td>");
-
-      var link = document.createElement("a");
-      if (test.type == "reftest") {
-        // TODO: link to the files being compared instead of the manifest.
-        link.href = "/" + test.full_id.split(":")[0] + ".list";
-      } else {
-        link.href = testURL;
-      }
-      link.innerHTML = testURL;
-      jQuery(tr).find("td:last").append(link);
-
-      jQuery("#test-table").append(tr);
-
-      gTestList.push(test);
-    });
-    log("Tests", gTestList);
-  };
-
-  function log(msg) {
-    if (!params.debug)
-      return;
-
-    jQuery("#log").show();
-    var str = "";
-    for (var i = 0; i < arguments.length; i++) {
-      str += arguments[i] + " ";
-    }
-    jQuery("#log").append(str + "<br>");
-
-    if (window.console && console.log) {
-      try {
-        console.log.apply('', arguments);
-      } catch (e) {}
-    }
-  };
-
-  function sendMessage(clientMessage, callback) {
-    log("=== Sending client message to server (type: " +
-        clientMessage.type + ")===");
-    var json = MochiKit.Base.serializeJSON(clientMessage);
-
-    // workaround for bug http://trac.mochikit.com/ticket/313
-    // YYY check if the current MochiKit code has the fix.
-    // IE does not recognize vertical tab literal "\v", so use the unicode escape.
-    json = json.replace(/\u000b/g, "\\u000b");
-
-    // Safari 3 on Windows sometimes get confused when using a relative path here.
-    // So use an absolute one.
-    var deferred = MochiKit.Async.doXHR("/testservice", {
-      method: "POST",
-      sendContent: json
-    });
-
-    deferred.addCallbacks(function(req) {
-      log("Got response");
-      var serverMessage = eval("(" + req.responseText + ")");
-      log(serverMessage);
-      if (serverMessage.type == "error") {
-        TestRunner._stopAndShowFailure(serverMessage.error_msg,
-                                       serverMessage.error_image_path);
-        return;
-      }
-      callback(serverMessage);
-    }, function() {
-      log("FAIL");
-      TestRunner._stopAndShowFailure("XHR error");
-    });
-  };
-
-  function getTests() {
-    sendMessage({
-      type: "get_tests",
-    }, function(serverMessage) {
-      buildTestList(serverMessage.tests);
-    });
-  };
-
-  connect(window, 'onload', hookup);
-  connect(window, 'onload', getTests);
-
-  </script>
-  <style>
-  html {
-    font-family: Verdana, sans;
-    font-size: small;
-  }
-  #framelocator {
-    background-color: blue;
-    height: 20px;
-    width: 502px; // Width of the frame border box
-  }
-  #testframe {
-    border: 1px lime solid;
-  }
-  #log {
-    position: absolute;
-    width: 40em;
-    right: 10px;
-    border: 1px black dashed;
-    padding: 5px;
-    white-space: pre;
-    background-color: white;
-  }
-  #image-viewer-container {
-    background-color: gray;
-    border: thick solid #eee;
-    -moz-border-radius: 20px;
-    border-radius: 20px;
-    margin: 3em;
-    padding: 5em;
-    position: fixed;
-    display: none;
-    top: 20px;
-    left: 20px;
-  }
-  #image-viewer-container div {
-    margin-bottom: 3em;
-  }
-  #image-viewer-container img {
-    border: 1px lime solid;
-  }
-  </style>
+  <script src="/testrunner/jquery-1.3.2.js"></script>
+  <script src="/testrunner/jquery.jsonrpc.js"></script>
+  <!-- For debug
+  <script type='text/javascript'
+          src='http://getfirebug.com/releases/lite/1.2/firebug-lite-compressed.js'></script>
+  -->
+  <script src="/testrunner/class.js"></script>
+  <script src="/testrunner/runners.js"></script>
+  <script src="/testrunner/testrunner.js"></script>
+  <link rel="stylesheet" type="text/css" href="/testrunner/testrunner.css">
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
 </head>
 <body>
-<div class="container">
-  <h2>--><a href="#" id="runtests">Run Tests</a><--</h2>
-  <p style="float: right;">
-    <small>Based on the <a href="http://www.mochikit.com/">MochiKit</a>unit tests.</small>
-  </p>
-  <div class="status"><h1 id="indicator">Status</h1>
-  <h2 id="pass">Passed: <span id="pass-count">0</span></h2>
-  <h2 id="fail">Failed: <span id="fail-count">0</span></h2>
-  <h2 id="fail">Todo: <span id="todo-count">0</span></h2>
-</div>
-<div class="clear"></div>
+  <div class="statusLine">
+    <ul class="statusInfo statusInfoTop">
+      <li>batch mode: <span id="batchMode"></span></li>
+      <li>pass: <span id="passCount"></span></li>
+      <li>fail: <span id="failCount"></span></li>
+      <li>other: <span id="otherCount"></span></li>
+      <li>done/total: <span id="doneCount"></span>/<span
+                            id="totalCount"></span></li>
+    </ul>
+    <div id="progressBarContainer">
+      <div id="progressBar"></div>
+    </div>
+    <ul>
+      <li>Status: <span id="status"></span> <span id="statusMessage"></span></li>
+    </ul>
+  </div>
+  <div class="statusLine">
+    <ul class="statusInfo actions">
+      <li class="testStatus" id="testStatus"></li>
+      <li>Actions:</li>
+      <li><button id="startButton">Start</button></li>
+      <li><button id="stopButton">Stop</button></li>
+      <li><button id="loadTestsButton">Load Tests</button></li>
+      <li><button id="saveResultsButton">View/Save Results</button></li>
+      <li><button id="clearResultsButton">Clear Results</button></li>
+      <li><button id="resetButton">Reset</button></li>
+    </ul>
+    <ul>
+      <li>Current test: <span id="currentTest"></span></li>
+    </ul>
+  </div>
 
-<div id="log" style="display: none;">
-</div>
+  <div class="frameholder">
+    <div id="framelocator"></div>
+    <iframe scrolling="no" frameborder="0" id="testframe"
+            width="800" height="500"></iframe>
+  </div>
 
-<div id="current-test"><b>Currently Executing: <span id="current-test-path">_</span></b></div>
-<div class="clear"></div>
-<div class="frameholder">
-  <div id="framelocator"></div>
-  <iframe scrolling="no" frameborder="0" id="testframe" width="500" height="300"></iframe>
-</div>
-<div class="clear"></div>
-<div class="toggle"><a href="#" id="toggleNonTests">Show Non-Tests</a>
-<br></br>
-</div>
-<table cellpadding="0" cellspacing="0" id="test-table">
-  <tr>
-    <td>Passed</td>
-    <td>Failed</td>
-    <td>Todo</td>
-    <td>Details</td>
-    <td>Test Files</td>
-  </tr>
-</table>
-<div class="clear"></div>
-</div>
+  <table id="testsTable">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Type</th>
+        <th>Information</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
 
-<div id="image-viewer-container" onclick="$('image-viewer-container').style.display='none'; return false;">
-  <div>click on the image to close</div>
-  <img id="image-viewer"></img>
-</div>
+  <div class="footer">
+    <a href="http://code.google.com/p/browsertests/wiki/StartPage#Running_the_tests"
+    >About W3TestRunner</a> |
+    <a href="http://code.google.com/p/browsertests/issues/list">Report a Bug</a> |
+    <a href="http://groups.google.com/group/browsertests">Mailing List</a> |
+    <a href="http://code.google.com/p/browsertests/source/checkout">Get the Source</a>
+  </div>
+
+  <div id="loadTestsBox" class="messageBox hidden">
+    <h1>Welcome to the W3TestRunner</h1>
+    <p>
+      Please enter below the path to the directory on your local file system
+      that contains the tests you want to run. This will clear any tests
+      already loaded.
+    </p>
+    <p>
+      <input type="text" id="testsPath">
+    </p>
+    <p>
+      <button id="loadLocalTestsButton">Load tests</button>
+    </p>
+    <p class="error" id="loadTestsError">
+
+    </p>
+    <p>
+      NOTE: you can also use the <code>--tests-path PATH</code> command line
+      argument to automatically load the tests at the given PATH.
+    </p>
+
+    <!--
+      TODO: interface for loading tests from a Web server.
+    -->
+  </div>
+
+  <div id="errorBox" class="messageBox hidden">
+    <h1 class="error">An error occurred</h1>
+
+    <p>An unrecoverable error happened, the tests are stopped. You can still
+    view or save the results for the tests that were run, but the test run will
+    be flagged as an error.</p>
+    <p>You should press the Reset button or load tests to continue running
+    tests.</p>
+    <h2>Error detail:</h2>
+    <p id="errorDetail">
+    </p>
+  </div>
+
+  <div id="screenShotFailure" class="messageBox hidden">
+    <h1 style="color: orange">Screenshot Failure</h1>
+
+    <p>A screenshot was taken for running the current Reftest but the
+    application failed to locate the frame containing the test.</p>
+    <p><b>Server Error message:</b>
+      <span id="screenShotFailureErrorMessage"></span>
+    </p>
+    <p>Try to make the test frame visible and then try again:</p>
+    <p>
+      <button style="font-size: larger;" id="reftestContinueButton">
+        Try again and continue running tests</button>
+    </p>
+    <p>To help you identify the issue, you can check
+      <a id="screenshotImageLink" href="#" target="_blank">
+        the captured screenshot image</a>.
+    </p>
+  </div>
+
+  <div id="resultDetail" class="messageBox hidden">
+    <h1>Result detail</h1>
+
+    <dl>
+      <dt>Test identifier:</dt>
+      <dd id="resultDetailTestId"></dd>
+      <dt>Test type:</dt>
+      <dd id="resultDetailTestType"></dd>
+      <dt>Status:</dt>
+      <dd id="resultDetailStatus"></dd>
+      <dt>Status Message:</dt>
+      <dd id="resultDetailStatusMessage"></dd>
+    </dl>
+    <div class="typeSpecific mochitest">
+      <dl>
+        <dt>Pass count:</dt>
+        <dd id="resultDetailPassCount"></dd>
+        <dt>Fail count:</dt>
+        <dd id="resultDetailFailCount"></dd>
+        <dt>Log:</dt>
+        <dd>
+          <div id="resultDetailLog"></div>
+        </dd>
+      </dl>
+    </div>
+    <div class="typeSpecific reftest">
+      <dl>
+        <dt>Comparison type:</dt>
+        <dd id="resultDetailTestEqual"></dd>
+        <dt>Pixel diff:</dt>
+        <dd id="resultDetailPixelDiff"></dd>
+        <dt>Image 1:</dt>
+        <dd>
+          <a id="resultDetailTestUrl1" href="#" target="_blank"></a>
+          <br><br>
+          <img id="resultDetailImage1" src="">
+        </dd>
+        <dt>Image 2:</dt>
+        <dd>
+          <a id="resultDetailTestUrl2" href="#" target="_blank"></a>
+          <br><br>
+          <img id="resultDetailImage2" src="">
+        </dd>
+        <dt>Image Diff:</dt>
+        <dd><img id="resultDetailImageDiff" src=""></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div id="viewSaveResults" class="messageBox hidden">
+    <h1>View / Save Results</h1>
+    <p id="viewSaveResultsCompletedMessage">
+      The tests have completed. You can now view a report of the results or
+      upload them to the test server (feature not yet available).
+      If you close this message box, you can view more details about tests
+      and results or load and run new tests.
+    </p>
+    <h2>HTML report</h2>
+    <p>
+      <a href="/report" target="_blank">View a HTML report of the tests</a>
+    </p>
+    <h2>Upload results</h2>
+    <p>feature not yet available</p>
+  </div>
 
 </body>
 </html>

@@ -1,0 +1,199 @@
+body {
+  font-size: small;
+  font-family: Verdana, Helvetica, Arial, sans-serif;
+}
+h1, h2 {
+  text-shadow: gray 2px 2px 2px;
+}
+a:link {
+  color: blue;
+}
+a:visited {
+  color: #50f;
+}
+a:hover{
+  color: red;
+}
+
+.statusLine {
+  position: relative;
+  border: 1px solid black;
+  padding-left: 0.5em;
+  margin-bottom: 0.2em;
+  line-height: 2em;
+}
+.statusLine > .statusInfo {
+  position: absolute;
+  right: 0;
+}
+.statusLine > .statusInfoTop {
+  right: 100px;
+}
+#progressBarContainer {
+  position: absolute;
+  right: 2px;
+  width: 100px;
+  height: 50%;
+  top: 20%;
+  border: 1px solid gray;
+}
+#progressBar {
+  position: absolute;
+  background-color: #ade;
+  height: 100%;
+}
+.statusLine ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.statusLine ul li {
+  display: inline;
+  margin-right: 1em;
+}
+.statusInfo > span {
+  margin-right: 3em;
+}
+#status {
+  margin-right: 2em;
+}
+.statusInfo .testStatus {
+  color: gray;
+  padding-right: 3em;
+}
+.statusInfo.actions li {
+  /* TODO: see why Firefox 3.6 puts the reset button one line below if the
+           margin is less than about 5px */
+  margin-right: 5px !important;
+}
+.statusInfo button {
+  line-height: 1em;
+  min-width: 6em;
+}
+
+#framelocator {
+  background-color: blue;
+  height: 20px;
+  width: 802px; /* Width of the frame border box */
+}
+#testframe {
+  border: 1px lime solid;
+}
+
+#testsTable {
+  border-collapse: collapse;
+}
+#testsTable.running .status a {
+  display: none;
+}
+#testsTable th, #testsTable td {
+  border: thin silver solid;
+  padding: 0.2em 1em;
+}
+#testsTable td {
+  text-align: left;
+  vertical-align: top;
+}
+#testsTable th {
+  background: gainsboro;
+}
+#testsTable th:first-child {
+  min-width: 15em;
+}
+#testsTable a {
+  text-decoration: none;
+}
+#testsTable a:hover {
+  text-decoration: underline;
+  color: blue;
+}
+#testsTable .testDetail dd {
+  margin-bottom: 8px;
+  margin-left: 80px;
+}
+.result-fail {
+  background-color: red;
+  color: yellow;
+}
+.result-pass {
+  background-color: lime;
+}
+.result-error {
+  background-color: black;
+  color: white;
+}
+.result-timeout {
+  background-color: gray;
+}
+.result-skipped {
+  background-color: olive;
+  color: white;
+}
+.result-running {
+  background-color: #eee;
+}
+
+.messageBox {
+  font-size: medium;
+  background-color: white;
+
+  position: absolute;
+  left: 2em;
+  right: 2em;
+  top: 2em;
+  margin-bottom: 3em;
+  padding: 1em;
+  min-height: 80%;
+
+  border-radius: 20px;
+  -moz-border-radius: 20px;
+  -webkit-border-radius: 20px;
+  border: solid medium gray;
+
+  box-shadow: 3px 3px 10px gray;
+  -moz-box-shadow: 3px 3px 10px gray;
+  -webkit-box-shadow: 3px 3px 10px gray;
+}
+.closeBox {
+  position: absolute;
+  right: 30px;
+  top: 10px;
+}
+.closeBox:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#testsPath {
+  width: 70%;
+}
+
+#resultDetailLog {
+  border: thin dashed lightGray;
+  overflow: auto;
+  white-space: pre;
+}
+
+.footer {
+  margin-top: 3em;
+  text-align: center;
+}
+
+.messageBox dt {
+  font-weight: bold;
+}
+.messageBox dd {
+  margin: 0.5em 1em 1em 6em;
+}
+
+.reftest img {
+  border: 1px solid gray;
+}
+
+.hidden {
+  display: none;
+}
+.error {
+  color: red;
+}

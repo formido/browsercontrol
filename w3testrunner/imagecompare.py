@@ -1,38 +1,41 @@
-import os
-import subprocess
+import base64
 import logging
-import Image, ImageChops, ImageStat
+import os
 import StringIO
-import time
-import random
+import subprocess
 import sys
+import random
 import tempfile
+import time
+
+import Image
+import ImageChops
+import ImageStat
 
 log = logging.getLogger(__name__)
 
 class ImageCompareException(Exception):
-    def __init__(self, message, error_image_path=None):
+    def __init__(self, message, error_image):
         super(ImageCompareException, self).__init__(message)
-        self.error_image_path = error_image_path
+        self.error_image = error_image
 
 # These values should match the HTML test runner configuration.
-FRAME_HEIGHT = 300
-FRAME_WIDTH = 500
+FRAME_WIDTH = 800
+# Note: Mozilla reftests use a height of 1000 pixels, but that would be too
+# large for common screen configurations where the whole frame has to be
+# visible.
+FRAME_HEIGHT = 500
 FRAME_BORDER = 1
 FRAME_BORDER_COLOR = (0, 255, 0)
 
-FRAMELOCATOR_HEIGHT = 20
 FRAMELOCATOR_WIDTH = FRAME_WIDTH + 2 * FRAME_BORDER
+FRAMELOCATOR_HEIGHT = 20
 FRAMELOCATOR_COLOR = (0, 0, 255)
 
 PAGE_BACKGROUND_COLOR = (255, 255, 255)
 
 class ImageComparator(object):
-    def __init__(self, results_path=None, small_height=False):
-        if not results_path:
-            results_path = tempfile.mkdtemp()
-            log.info("Result images stored in %s", results_path)
-        self.results_path = results_path
+    def __init__(self):
         self.image1 = None
         self.image2 = None
         self.frame_border = None
@@ -98,7 +101,8 @@ class ImageComparator(object):
         if self.screenshooter:
             return self.screenshooter()
         if not hasattr(self, method):
-            raise Exception("Screenshot taking not implemented on this platform")
+            raise Exception("Screenshot taking not implemented "
+                            "on this platform")
         return getattr(self, method)()
 
     def _compare_images(self, image1, image2):
@@ -115,7 +119,10 @@ class ImageComparator(object):
         advance = 0
         x, y = start_point
         while advance < max_advance:
-            color = self._get_pixel(image, (x + advance_x, y + advance_y))
+            try:
+                color = self._get_pixel(image, (x + advance_x, y + advance_y))
+            except IndexError:
+                return None
             if color == target_color:
                 return (x, y)
             elif color != initial_color:
@@ -126,6 +133,7 @@ class ImageComparator(object):
         return None
 
     def _find_frame_border(self, image):
+        framelocators = set()
         for x in range(0, image.size[0] - 1, FRAMELOCATOR_WIDTH):
             for y in range(0, image.size[1] - 1, FRAMELOCATOR_HEIGHT):
                 if self._get_pixel(image, (x, y)) == FRAMELOCATOR_COLOR:
@@ -143,32 +151,42 @@ class ImageComparator(object):
                                          FRAMELOCATOR_WIDTH)
                     if not framelocator_lefttop:
                         continue
+                    framelocators.add(framelocator_lefttop)
 
-                    frame_left = framelocator_lefttop[0]
-                    frame_top = framelocator_lefttop[1] + FRAMELOCATOR_HEIGHT
-                    frame_border = (frame_left, frame_top,
-                                    frame_left + FRAME_WIDTH + FRAME_BORDER,
-                                    frame_top + FRAME_HEIGHT + FRAME_BORDER)
-                    if self._is_frame_border_well_positionned(image,
-                                                              frame_border):
-                        return frame_border
+        def framelocator_to_frame_border(framelocator_lefttop):
+            frame_left = framelocator_lefttop[0]
+            frame_top = framelocator_lefttop[1] + FRAMELOCATOR_HEIGHT
+            frame_border = (frame_left, frame_top,
+                            frame_left + FRAME_WIDTH + FRAME_BORDER,
+                            frame_top + FRAME_HEIGHT + FRAME_BORDER)
+            if not self._is_frame_border_well_positionned(image,
+                                                          frame_border):
+                return None
+            return frame_border
 
-        error_image_path = "error.png"
-        if not os.path.isdir(self.results_path):
-            os.makedirs(self.results_path)
-        path = os.path.join(self.results_path, error_image_path)
-        log.debug("Saving error images to %s", path)
-        image.save(path)
-
-        raise ImageCompareException("Frame border not found "
-                                    "(is the browser window covered?)",
-                                    error_image_path)
+        frame_borders = [framelocator_to_frame_border(fl) for fl in framelocators]
+        frame_borders = [fb for fb in frame_borders if fb]
+        if not frame_borders:
+            raise ImageCompareException("Frame border not found "
+                                        "(is the browser window covered or not "
+                                        "fully visible?)",
+                                        self._to_data_url(image))
+        if len(frame_borders) > 1:
+            raise ImageCompareException("More than one frame border was found. "
+                                        "Make sure to have only one browser "
+                                        "open with the testrunner",
+                                        self._to_data_url(image))
+        return frame_borders[0]
 
     def _is_frame_border_well_positionned(self, image, frame_border):
-        framelocator_box = (frame_border[0], frame_border[1] - FRAMELOCATOR_HEIGHT,
-                            frame_border[2], frame_border[1] - FRAME_BORDER)
+        framelocator_box = (frame_border[0],
+                            frame_border[1] - FRAMELOCATOR_HEIGHT,
+                            frame_border[2],
+                            frame_border[1] - FRAME_BORDER)
 
-        locator_image = Image.new("RGB", (FRAMELOCATOR_WIDTH, FRAMELOCATOR_HEIGHT), FRAMELOCATOR_COLOR)
+        locator_image = Image.new("RGB", (FRAMELOCATOR_WIDTH,
+                                          FRAMELOCATOR_HEIGHT),
+                                  FRAMELOCATOR_COLOR)
         cropped_image = image.crop(framelocator_box)
         (_, pixel_diff) = self._compare_images(cropped_image, locator_image)
         if pixel_diff != 0:
@@ -200,13 +218,21 @@ class ImageComparator(object):
 
         return True
 
+    def _to_data_url(self, image):
+        output = StringIO.StringIO()
+        image.save(output, "PNG")
+        image_data = output.getvalue()
+        output.close()
+        return "data:image/png;base64," + base64.b64encode(image_data)
+
     def _grab_image(self):
         image = self._take_screenshot()
         if image.mode != "RGB":
             image = image.convert("RGB")
 
         if (not self.frame_border or
-            not self._is_frame_border_well_positionned(image, self.frame_border)):
+            not self._is_frame_border_well_positionned(image,
+                                                       self.frame_border)):
             log.debug("Computing frame border")
             self.frame_border = self._find_frame_border(image)
             log.debug("Frame border is: %s", self.frame_border)
@@ -229,26 +255,18 @@ class ImageComparator(object):
         assert self.image1
         assert self.image2
 
-        (self.imagediff, pixel_diff) = self._compare_images(self.image1, self.image2)
+        (self.imagediff, pixel_diff) = self._compare_images(self.image1,
+                                                            self.image2)
         return pixel_diff
 
     def save_images(self):
-        # Use a random value to prevent time collision
-        path = "%s/%s" % (time.strftime("%Y-%m-%d"),
-                          time.strftime("%H-%M-%S-") +
-                          str(random.randint(0, 1e10)))
-        save_path = os.path.join(self.results_path, path)
-        os.makedirs(save_path)
-        log.debug("Saving images to %s", save_path)
-
+        images = {}
         imagenames = ["image1", "image2", "imagediff"]
         for imagename in imagenames:
             image = getattr(self, imagename, None)
             if image:
-                image.save(os.path.join(save_path, imagename + ".png"))
-        log.debug("Save done")
-
-        return path
+                images[imagename] = self._to_data_url(image)
+        return images
 
     def reset(self):
         self.image1 = None

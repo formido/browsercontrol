@@ -82,7 +82,7 @@ RunSet.reloadAndRunAll = function(e) {
   } else {
     window.location.href += "?autorun=1";
   }
-
+  
 };
 
 // UI Stuff
@@ -119,11 +119,7 @@ function toggleNonTests (e) {
 
 // hook up our buttons
 function hookup() {
-  //connect("runtests", "onclick", RunSet, "reloadAndRunAll");
-  connect("runtests", "onclick", RunSet, function(e) {
-    e.preventDefault();
-    RunSet.runall();
-  });
+  connect("runtests", "onclick", RunSet, "reloadAndRunAll");
   connect("toggleNonTests", "onclick", toggleNonTests);
   // run automatically if
   if (params.autorun) {

@@ -26,6 +26,7 @@ install_requires = [
     'nose',
     'WebOb',
     'Paste',
+    'wsgi-jsonrpc',
     # Python Imaging Library should be installed from the .exe
     # on Windows.
     #'PIL',
@@ -44,7 +45,7 @@ if platform == "mac":
 options(
     setup=Bunch(
         name="W3TestRunner",
-        version="0.1",
+        version="0.2pre",
         packages=find_packages(),
         zip_safe=False,
         entry_points={
@@ -117,13 +118,35 @@ def sdist():
     """Overrides sdist to generate everything needed."""
     pass
 
+@task
+@cmdopts([
+    ('username=', 'u', 'Google account name'),
+    ('password=', 'p', 'The googlecode.com password for your account'),
+])
+def upload_googlecode():
+    """Uploads a source package to Google Code."""
+
+    dist_file = path("dist/%s-%s.zip" % (options.setup.name,
+                                         options.setup.version))
+    # TODO: sdist won't produce a .zip on non-Windows.
+    if not dist_file.exists():
+        call_task("sdist")
+    if not dist_file.exists():
+        raise BuildFailure("Can't find dist file %s" % dist_file)
+
+    summary = "%s v%s" % (options.setup.name,
+                          options.setup.version)
+
+    import googlecode_upload
+    googlecode_upload.upload(str(dist_file), "browsertests", options.username,
+                             options.password, summary)
+
 # adapted from git://github.com/teepark/actionscript-bundler.git/
 @task
 @needs(['setuptools.command.clean'])
 def clean():
     for p in map(path, ('W3TestRunner.egg-info', 'setup.py', 'bootstrap.py',
-                        'paver-minilib.zip', 'build', 'dist',
-                        'w3testrunner/reftest_results')):
+                        'paver-minilib.zip', 'build', 'dist')):
         if p.exists():
             if p.isdir():
                 p.rmtree()

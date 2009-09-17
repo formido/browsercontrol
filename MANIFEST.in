@@ -3,5 +3,5 @@ include paver-minilib.zip
 include setup.py
 include bootstrap.py
 include easy_install.exe.manifest
+include googlecode_upload.py
 recursive-include w3testrunner *
-prune w3testrunner/reftest_results

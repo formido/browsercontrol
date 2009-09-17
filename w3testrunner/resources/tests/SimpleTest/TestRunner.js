@@ -10,7 +10,7 @@ var TestRunner = {};
 TestRunner.logEnabled = false;
 TestRunner._currentTest = 0;
 TestRunner.currentTestURL = "";
-TestRunner._tests = [];
+TestRunner._urls = [];
 
 TestRunner.timeout = 5 * 60 * 1000; // 5 minutes.
 TestRunner.maxTimeouts = 4; // halt testing after too many timeouts
@@ -22,7 +22,7 @@ TestRunner._numTimeouts = 0;
 TestRunner._currentTestStartTime = new Date().valueOf();
 
 TestRunner._checkForHangs = function() {
-  if (TestRunner._currentTest < TestRunner._tests.length) {
+  if (TestRunner._currentTest < TestRunner._urls.length) {
     var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
     if (runtime >= TestRunner.timeout) {
       var frameWindow = $('testframe').contentWindow.wrappedJSObject ||
@@ -36,7 +36,7 @@ TestRunner._checkForHangs = function() {
 
         TestRunner.currentTestURL = "(SimpleTest/TestRunner.js)";
         frameWindow.SimpleTest.ok(false, TestRunner.maxTimeouts + " test timeouts, giving up.");
-        var skippedTests = TestRunner._tests.length - TestRunner._currentTest;
+        var skippedTests = TestRunner._urls.length - TestRunner._currentTest;
         frameWindow.SimpleTest.ok(false, "Skipping " + skippedTests + " remaining tests.");
       }
 
@@ -79,7 +79,6 @@ TestRunner._toggle = function(el) {
 **/
 TestRunner._makeIframe = function (url, retry) {
     var iframe = $('testframe');
-    /* Doesn't work as expected on IE
     if (url != "about:blank" &&
         (("hasFocus" in document && !document.hasFocus()) ||
          ("activeElement" in document && document.activeElement != iframe))) {
@@ -97,7 +96,6 @@ TestRunner._makeIframe = function (url, retry) {
         }
     }
     window.scrollTo(0, $('indicator').offsetTop);
-    */
     iframe.src = url;
     iframe.name = url;
     iframe.width = "500";
@@ -110,12 +108,11 @@ TestRunner._makeIframe = function (url, retry) {
  * The arguments are the URLs of the test to be ran.
  *
 **/
-TestRunner.runTests = function (tests) {
+TestRunner.runTests = function (/*url...*/) {
     if (TestRunner.logEnabled)
         TestRunner.logger.log("SimpleTest START");
 
-    TestRunner._tests = tests;
-
+    TestRunner._urls = flattenArguments(arguments);
     $('testframe').src="";
     TestRunner._checkForHangs();
     window.focus();
@@ -123,122 +120,15 @@ TestRunner.runTests = function (tests) {
     TestRunner.runNextTest();
 };
 
-TestRunner._stopAndShowFailure = function(message, errorImagePath) {
-  TestRunner._haltTests = true;
-  TestRunner.runNextTest();
-
-  var indicator = $("indicator");
-  indicator.innerHTML = "Harness Failure: " + message;
-  indicator.style.backgroundColor = "#FFA500";
-  if (errorImagePath) {
-    indicator.innerHTML += " <a href='/reftest_results/" + errorImagePath +
-                           "' target=blank>View screenshot</a>";
-  }
-}
-
-var currentReftest = null;
-var currentReftestState = 0;
-var reftestScreenshot1Id = -1;
-var lastTestResults = null;
-var reftestStates = [
-  "loadUrl1",
-  "takeScreenshot1",
-  "loadUrl2",
-  "takeScreenshot2AndCompare",
-  "testFinished"
-];
-
-TestRunner.handleReftest = function() {
-  function loadUrl(url, callback) {
-    var iframe = TestRunner._makeIframe(url, 0);
-
-    var connectId = connect(iframe, "onload", this, function() {
-      disconnect(connectId);
-      log("reftest url loaded");
-      TestRunner.handleReftest();
-    });
-  }
-
-  log("TestRunner.handleReftest", currentReftestState,
-      reftestStates[currentReftestState]);
-  switch (reftestStates[currentReftestState]) {
-    case "loadUrl1":
-      loadUrl(currentReftest.url);
-
-      break;
-    case "takeScreenshot1":
-      sendMessage({
-        type: "take_screenshot1"
-      }, function(serverMessage) {
-        TestRunner.handleReftest(serverMessage);
-      });
-
-      break;
-    case "loadUrl2":
-      var serverMessage = arguments[0];
-      reftestScreenshot1Id = serverMessage.screenshot1_id;
-
-      loadUrl(currentReftest.url2);
-      break;
-    case "takeScreenshot2AndCompare":
-      sendMessage({
-        type: "take_screenshot2_and_compare",
-        screenshot1_id: reftestScreenshot1Id,
-        save_images: currentReftest.equal ? "if_pixel_diff_gt_0" : "if_pixel_diff_eq_0"
-      }, function(serverMessage) {
-        TestRunner.handleReftest(serverMessage);
-      });
-
-      break;
-    case "testFinished":
-      var serverMessage = arguments[0];
-      var equal = serverMessage.pixel_diff == 0;
-
-      var testPassed = (equal == currentReftest.equal);
-      log("test status: ", testPassed);
-
-      currentReftest = null;
-      currentReftestState = 0;
-      reftestScreenshot1Id = -1;
-
-      lastTestResults = {
-        "OK": testPassed ? 1 : 0,
-        "notOK": testPassed ? 0 : 1,
-        "todo": 0,
-        "imagesPath": serverMessage.images_path
-      };
-
-      // return to avoid incrementing the state counter.
-      return TestRunner.testFinished();
-  }
-  currentReftestState++;
-};
-
-TestRunner.runTest = function(test) {
-  if (test.type == "mochitest") {
-    var url = TestRunner._tests[TestRunner._currentTest].testURL;
-    TestRunner._makeIframe(url, 0);
-
-  } else if (test.type == "reftest") {
-    currentReftest = test;
-    currentReftestState = 0;
-    TestRunner.handleReftest();
-
-  } else {
-    TestRunner._stopAndShowFailure("Unknown test type: " + test.type);
-  }
-};
-
 /**
  * Run the next test. If no test remains, calls onComplete().
  **/
 TestRunner._haltTests = false;
 TestRunner.runNextTest = function() {
-    if (TestRunner._currentTest < TestRunner._tests.length &&
+    if (TestRunner._currentTest < TestRunner._urls.length &&
         !TestRunner._haltTests)
     {
-        var test = TestRunner._tests[TestRunner._currentTest];
-        var url = test.testURL;
+        var url = TestRunner._urls[TestRunner._currentTest];
         TestRunner.currentTestURL = url;
 
         $("current-test-path").innerHTML = url;
@@ -248,7 +138,7 @@ TestRunner.runNextTest = function() {
         if (TestRunner.logEnabled)
             TestRunner.logger.log("Running " + url + "...");
 
-        TestRunner.runTest(test);
+        TestRunner._makeIframe(url, 0);
     } else {
         $("current-test").innerHTML = "<b>Finished</b>";
         TestRunner._makeIframe("about:blank", 0);
@@ -287,7 +177,7 @@ TestRunner.runNextTest = function() {
 TestRunner.testFinished = function(doc) {
     if (TestRunner.logEnabled)
         TestRunner.logger.debug("SimpleTest finished " +
-                                TestRunner._tests[TestRunner._currentTest].testURL);
+                                TestRunner._urls[TestRunner._currentTest]);
 
     TestRunner.updateUI();
     TestRunner._currentTest++;
@@ -298,11 +188,6 @@ TestRunner.testFinished = function(doc) {
  * Get the results.
  */
 TestRunner.countResults = function(doc) {
-  if (lastTestResults) {
-    var results = lastTestResults;
-    lastTestResults = null;
-    return results;
-  }
   var nOK = withDocument(doc,
      partial(getElementsByTagAndClassName, 'div', 'test_ok')
   ).length;
@@ -349,21 +234,4 @@ TestRunner.updateUI = function() {
   tds[1].innerHTML = results.notOK;
   tds[2].style.backgroundColor = results.todo > 0 ? "orange" : "#0d0";
   tds[2].innerHTML = results.todo;
-
-  if (results.imagesPath) {
-    tds[3].style.visibility = "visible";
-    var imgLinks = tds[3].getElementsByTagName("a");
-
-    function createOpenImageClosure(imageName) {
-      return function(e) {
-        e.preventDefault();
-        $('image-viewer').src = "/reftest_results/" + results.imagesPath +
-                                "/" + imageName + ".png";
-        $('image-viewer-container').style.display = "block";
-      }
-    }
-    connect(imgLinks[0], "onclick", this, createOpenImageClosure("image1"));
-    connect(imgLinks[1], "onclick", this, createOpenImageClosure("image2"));
-    connect(imgLinks[2], "onclick", this, createOpenImageClosure("imagediff"));
-  }
 }

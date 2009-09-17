@@ -9,6 +9,8 @@ import hashlib
 import time
 import itertools
 
+from w3testrunner.testsloaders import TestsLoader, LoaderException
+
 log = logging.getLogger(__name__)
 
 # utility functions
@@ -755,3 +757,54 @@ class TestsExtractor(object):
 
     def get_imported_tests(self, directory):
         return self.get_imported_tests_and_resources(directory)[0]
+
+class LocalTestsLoader(TestsLoader):
+    type = "local"
+
+    def __init__(self, runner, load_info):
+        super(LocalTestsLoader, self).__init__(runner, load_info)
+        self.tests_path = load_info
+        # tests_path shouldn't contain a trailing slash.
+        self.tests_path = self.tests_path.rstrip("\\/")
+
+    def load(self):
+        if not os.path.exists(self.tests_path):
+            raise LoaderException("Tests path '%s' does not exist" %
+                                   self.tests_path)
+
+        testsextractor = TestsExtractor(tests_dir=self.tests_path)
+        # TODO: support importing subdirectories
+        itests = testsextractor.get_imported_tests(self.tests_path)
+
+        props = [
+            "id", "full_id", "type", "url", "file",
+            # reftests
+            "equal", "expected", "failure_type", "url2", "file2"
+        ]
+        tests = []
+        for itest in itests:
+            test_obj = {}
+            test = itest.create_test()
+            # Ignore layouttests for now.
+            if test.type == "layouttest":
+                continue
+            for p in props:
+                test_obj[p] = getattr(test, p, None)
+            tests.append(test_obj)
+
+        self.runner.webapp.enable_localtests(self.tests_path)
+        self.runner.tests = tests
+
+    def cleanup(self):
+        self.runner.webapp.disable_localtests()
+
+    @classmethod
+    def add_options(cls, parser):
+        parser.add_option('--tests-path',
+            help='Path to the tests to load')
+
+    @classmethod
+    def maybe_load_tests(cls, runner):
+        if runner.options.tests_path:
+            return runner.options.tests_path
+        return None
