@@ -119,6 +119,7 @@ class Runner(object):
         self.status = NEEDS_TESTS
         self.status_message = ""
         self.ua_string = None
+        self.testid_to_test = {}
         if self.last_loader:
             self.last_loader.cleanup()
             self.last_loader = None
@@ -186,7 +187,7 @@ class Runner(object):
         return self.testid_to_test[testid]
 
     def test_started(self, testid):
-        log.debug("Test %s started", testid)
+        log.info("Test %s started", testid)
         test = self._get_test(testid)
         self.running_test = test
 
@@ -222,7 +223,7 @@ class Runner(object):
             self.test_started(testid)
 
     def set_result(self, testid, result, did_start_notify):
-        log.debug("Saving result for testid: %s", testid)
+        log.info("Saving result for testid: %s", testid)
 
         self._stop_hang_timer()
         test = self._get_test(testid)

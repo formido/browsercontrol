@@ -128,8 +128,6 @@ var MochitestRunner = Runner.extend({
 
     this._iframe.src = this._test.url;
     this._iframe.name = this._test.url;
-    // XXX is this really needed?
-    this._iframe.width = "500";
 
     this._activity("Frame loaded with test URL");
   },
@@ -199,6 +197,9 @@ var ReftestRunner = Runner.extend({
     if (this._finished)
       return;
 
+    LOG("TestRunner.handleReftest called, current state: " +
+        this._states[this._currentState] + " (" +  this._currentState + ")");
+
     var self = this;
     function loadUrl(url, callback) {
       $(self._iframe).one("load", function(e) {
@@ -213,8 +214,6 @@ var ReftestRunner = Runner.extend({
       self._iframe.src = url;
     }
 
-    LOG("TestRunner.handleReftest", this._currentState,
-                this._states[this._currentState]);
     switch (this._states[this._currentState]) {
       case "loadUrl1":
         loadUrl(this._test.url);

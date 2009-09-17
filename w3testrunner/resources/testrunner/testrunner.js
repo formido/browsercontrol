@@ -531,7 +531,7 @@ var TestRunner = TR = {
       }
 
       TR.updateUI(test);
-    });
+    }, true);
   },
 
   runTest: function(test, onDone) {

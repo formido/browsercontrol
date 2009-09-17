@@ -765,7 +765,7 @@ class LocalTestsLoader(TestsLoader):
         super(LocalTestsLoader, self).__init__(runner, load_info)
         self.tests_path = load_info
         # tests_path shouldn't contain a trailing slash.
-        self.tests_path = self.tests_path.rstrip("\\/")
+        self.tests_path = self.tests_path.strip().rstrip("\\/")
 
     def load(self):
         if not os.path.exists(self.tests_path):

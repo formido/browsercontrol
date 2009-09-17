@@ -115,7 +115,10 @@ class ImageComparator(object):
 
     def _find_pixel(self, image, start_point, target_color,
                     advance_x, advance_y, max_advance):
-        initial_color = self._get_pixel(image, start_point)
+        try:
+            initial_color = self._get_pixel(image, start_point)
+        except IndexError:
+            return None
         advance = 0
         x, y = start_point
         while advance < max_advance:
@@ -193,28 +196,35 @@ class ImageComparator(object):
             log.debug("Framelocator doesn't match")
             return False
 
-        if (# left border
-            not self._find_pixel(image, (frame_border[0], frame_border[1]),
-                                 PAGE_BACKGROUND_COLOR,
-                                 0, 1,
-                                 FRAME_HEIGHT + 2 * FRAME_BORDER) or
-            # top border
-            not self._find_pixel(image, (frame_border[0], frame_border[1]),
-                                 PAGE_BACKGROUND_COLOR,
-                                 1, 0,
-                                 FRAME_WIDTH + 2 * FRAME_BORDER) or
+        left, top, right, bottom = frame_border
+        advance_x = (1, 0)
+        advance_y = (0, 1)
+        borders = [
+            # left border
+            [(left, top), advance_y, FRAME_HEIGHT],
             # right border
-            not self._find_pixel(image, (frame_border[2], frame_border[1]),
-                                 PAGE_BACKGROUND_COLOR,
-                                 0, 1,
-                                 FRAME_HEIGHT + 2 * FRAME_BORDER) or
+            [(right, top), advance_y, FRAME_HEIGHT],
+            # top border
+            [(left, top), advance_x, FRAME_WIDTH],
             # bottom border
-            not self._find_pixel(image, (frame_border[0], frame_border[3]),
-                                 PAGE_BACKGROUND_COLOR,
-                                 1, 0,
-                                 FRAME_WIDTH + 2 * FRAME_BORDER)):
-            log.debug("Frame border mismatch")
-            return False
+            [(left, bottom), advance_x, FRAME_WIDTH],
+        ]
+
+        def border_matches(start_point, advance_x, advance_y, distance):
+            distance += 2 * FRAME_BORDER
+            expected_target = (start_point[0] + advance_x * (distance - 1),
+                               start_point[1] + advance_y * (distance - 1))
+            target = self._find_pixel(image, start_point,
+                                      PAGE_BACKGROUND_COLOR,
+                                      advance_x, advance_y,
+                                      distance + 2 * FRAME_BORDER)
+            return target == expected_target
+
+        for border in borders:
+            start_point, advances, distance = border
+            if not border_matches(start_point, advances[0], advances[1],
+                                  distance):
+                return False
 
         return True
 

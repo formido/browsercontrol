@@ -2,7 +2,7 @@ import logging
 import os
 import unittest
 
-from PIL import Image
+import Image
 
 from w3testrunner import imagecompare
 from w3testrunner.imagecompare import ImageComparator, ImageCompareException
@@ -73,7 +73,6 @@ class TestImageComparator(unittest.TestCase):
         mock_screen_shooter.image_file = "frame_offscreen.png"
         self.assertRaises(ImageCompareException, lambda: ic.grab_image1())
         self._reset_ic(ic)
-
 
     def test_comparison(self):
         mock_screen_shooter = MockScreenShooter()
