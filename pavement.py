@@ -46,7 +46,7 @@ except ImportError:
 options(
     setup=Bunch(
         name="W3TestRunner",
-        version="0.2pre",
+        version="0.2",
         packages=find_packages(),
         zip_safe=False,
         entry_points={
