@@ -150,8 +150,10 @@ MIME_MAPPINGS = {
 
 class RPCErrorMiddleware(object):
     """Middleware that will notify the running in case of error.
+    
     It expects the target application to be using the JSON-RPC protocol.
     """
+
     def __init__(self, application, runner):
         self.application = application
         self.runner = runner

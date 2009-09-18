@@ -1,6 +1,7 @@
 import optparse
 import os
 import logging
+import signal
 import sys
 import threading
 import time

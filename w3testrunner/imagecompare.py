@@ -113,12 +113,16 @@ class ImageComparator(object):
     def _get_pixel(self, image, point):
         return image.getpixel(point)[:3]
 
-    def _find_pixel(self, image, start_point, target_color,
+    def _find_pixel(self, image, start_point, start_color, target_color,
                     advance_x, advance_y, max_advance):
-        try:
-            initial_color = self._get_pixel(image, start_point)
-        except IndexError:
-            return None
+        """Advance from a point until a point of a given color is found.
+
+        Starts from start_point and advance pixel by pixel (according to
+        advance_x and advance_y) while the color matches start_color until
+        a pixel with target_color is found. This pixel position is returned.
+        If the target color is not found after max_advance iterations (not
+        counting the color check of the start_point), None is returned.
+        """
         advance = 0
         x, y = start_point
         while advance < max_advance:
@@ -128,7 +132,7 @@ class ImageComparator(object):
                 return None
             if color == target_color:
                 return (x, y)
-            elif color != initial_color:
+            elif color != start_color:
                 return None
             x += advance_x
             y += advance_y
@@ -141,6 +145,7 @@ class ImageComparator(object):
             for y in range(0, image.size[1] - 1, FRAMELOCATOR_HEIGHT):
                 if self._get_pixel(image, (x, y)) == FRAMELOCATOR_COLOR:
                     framelocator_top = self._find_pixel(image, (x, y),
+                                                        FRAMELOCATOR_COLOR,
                                                         PAGE_BACKGROUND_COLOR,
                                                         0, -1,
                                                         FRAMELOCATOR_HEIGHT)
@@ -149,6 +154,7 @@ class ImageComparator(object):
 
                     framelocator_lefttop = \
                         self._find_pixel(image, framelocator_top,
+                                         FRAMELOCATOR_COLOR,
                                          PAGE_BACKGROUND_COLOR,
                                          -1, 0,
                                          FRAMELOCATOR_WIDTH)
@@ -167,8 +173,10 @@ class ImageComparator(object):
                 return None
             return frame_border
 
-        frame_borders = [framelocator_to_frame_border(fl) for fl in framelocators]
+        frame_borders = [framelocator_to_frame_border(fl) for fl in
+                         framelocators]
         frame_borders = [fb for fb in frame_borders if fb]
+
         if not frame_borders:
             raise ImageCompareException("Frame border not found "
                                         "(is the browser window covered or not "
@@ -181,51 +189,48 @@ class ImageComparator(object):
                                         self._to_data_url(image))
         return frame_borders[0]
 
+    def _contains_rectangle(self, image, box, color):
+        box_width = box[2] - box[0]
+        box_height = box[3] - box[1]
+        rectangle_image = Image.new("RGB", (box_width, box_height), color)
+        cropped_image = image.crop(box)
+        (_, pixel_diff) = self._compare_images(cropped_image, rectangle_image)
+        return pixel_diff == 0
+
     def _is_frame_border_well_positionned(self, image, frame_border):
         framelocator_box = (frame_border[0],
                             frame_border[1] - FRAMELOCATOR_HEIGHT,
                             frame_border[2],
                             frame_border[1] - FRAME_BORDER)
 
-        locator_image = Image.new("RGB", (FRAMELOCATOR_WIDTH,
-                                          FRAMELOCATOR_HEIGHT),
-                                  FRAMELOCATOR_COLOR)
-        cropped_image = image.crop(framelocator_box)
-        (_, pixel_diff) = self._compare_images(cropped_image, locator_image)
-        if pixel_diff != 0:
+        if not self._contains_rectangle(image, framelocator_box,
+                                        FRAMELOCATOR_COLOR):
             log.debug("Framelocator doesn't match")
             return False
 
         left, top, right, bottom = frame_border
-        advance_x = (1, 0)
-        advance_y = (0, 1)
-        borders = [
+
+        # The frame corners on Firefox 3.5 Mac aren't exactly the same color
+        # as the frame border (With a border color of (0, 255, 0) the corners
+        # are (1, 255, 1)). To avoid mislocating the frame the corner colors
+        # are not checked.
+        CORNER_SIZE = FRAME_BORDER
+
+        border_rectangles = [
             # left border
-            [(left, top), advance_y, FRAME_HEIGHT],
+            (left, top + CORNER_SIZE, left + FRAME_BORDER, bottom-1),
             # right border
-            [(right, top), advance_y, FRAME_HEIGHT],
+            (right, top + CORNER_SIZE, right + FRAME_BORDER, bottom-1),
             # top border
-            [(left, top), advance_x, FRAME_WIDTH],
+            (left+1, top, right - CORNER_SIZE, top + FRAME_BORDER),
             # bottom border
-            [(left, bottom), advance_x, FRAME_WIDTH],
+            (left+1, bottom, right - CORNER_SIZE, bottom + FRAME_BORDER),
         ]
 
-        def border_matches(start_point, advance_x, advance_y, distance):
-            distance += 2 * FRAME_BORDER
-            expected_target = (start_point[0] + advance_x * (distance - 1),
-                               start_point[1] + advance_y * (distance - 1))
-            target = self._find_pixel(image, start_point,
-                                      PAGE_BACKGROUND_COLOR,
-                                      advance_x, advance_y,
-                                      distance + 2 * FRAME_BORDER)
-            return target == expected_target
-
-        for border in borders:
-            start_point, advances, distance = border
-            if not border_matches(start_point, advances[0], advances[1],
-                                  distance):
+        for border_rectangle in border_rectangles:
+            if not self._contains_rectangle(image, border_rectangle,
+                                            FRAME_BORDER_COLOR):
                 return False
-
         return True
 
     def _to_data_url(self, image):
