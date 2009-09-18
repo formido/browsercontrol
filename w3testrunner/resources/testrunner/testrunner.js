@@ -299,6 +299,8 @@ var TestRunner = TR = {
     $("#testStatus").html("");
 
     var status = this._state.status;
+    $("body").attr("class", "status-" +
+                   this._statusStrings[status].toLowerCase());
     if (status == RUNNING)
       $("#testsTable").addClass("running");
     else
@@ -538,7 +540,7 @@ var TestRunner = TR = {
     this.assert(this._state.status == RUNNING,
                 "runTest should be called when the status is RUNNING");
 
-    LOG("Running test", test);
+    LOG("***********  Running test " + test.id + "  ***********");
     $("#currentTest").text(test.id);
     test.running = true;
     this.updateTestStatus(test);
@@ -567,7 +569,10 @@ var TestRunner = TR = {
 
         TR.rpc("suspend_timer", [test.id, suspended], null, true);
       },
-      onFinished: function() {
+      // Test is passed as argument from the runner instead of being
+      // referenced from parent scope to work around a Firefox 3.7 bug:
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=517578
+      onFinished: function(test) {
         LOG("Test finished with result", test.result, test);
         TR._runner = null;
         delete test.running;
@@ -613,10 +618,7 @@ var TestRunner = TR = {
     this.runTest(nextTest, function() {
       this._currentTestIndex++;
       if (TR._state.status == RUNNING) {
-        // In a timeout to unroll the stack, otherwise unexpected things happen.
-        setTimeout(function() {
-          TR.runAllTests();
-        }, 10);
+        TR.runAllTests();
       }
     });
   }

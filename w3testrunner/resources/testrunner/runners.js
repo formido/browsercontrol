@@ -54,7 +54,9 @@ var Runner = Class.extend({
     this._cleanup();
     if (!wasAborted) {
       this._test.result = this._result;
-      this._callbacks.onFinished();
+      // pass the tests to the callback because of
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=517578
+      this._callbacks.onFinished(this._test);
     }
     this._test = null;
   },

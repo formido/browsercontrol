@@ -73,9 +73,12 @@ a:hover{
 }
 
 #framelocator {
-  background-color: blue;
+  background-color: gray;
   height: 20px;
   width: 802px; /* Width of the frame border box */
+}
+body.status-running #framelocator {
+  background-color: blue;
 }
 #testframe {
   border: 1px lime solid;
