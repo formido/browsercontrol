@@ -15,7 +15,7 @@ class MockScreenShooter(object):
     def __call__(self):
         assert self.image_file
         image_path = os.path.join(os.path.dirname(__file__),
-                                  "testdata", self.image_file)
+                                  "imagecompare_data", self.image_file)
         assert os.path.exists(image_path)
         return Image.open(image_path)
 
@@ -93,7 +93,3 @@ class TestImageComparator(unittest.TestCase):
         pixel_diff = ic.compare_images()
         self.assertAlmostEqual(pixel_diff, 454.0, 0)
         self._reset_ic(ic)
-
-if __name__ == '__main__':
-    setup_module()
-    unittest.main()

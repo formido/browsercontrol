@@ -23,7 +23,6 @@ else:
     platform = "mac"
 
 install_requires = [
-    'nose',
     'WebOb',
     'Paste',
     'wsgi-jsonrpc',
@@ -62,6 +61,9 @@ options(
         license="BSD",
         keywords="browser testing",
         url="http://www.browsertests.org/",
+        test_suite="nose.collector",
+        test_runner="unittest:TextTestRunner",
+        tests_require=["nose"],
     ),
     virtualenv=Bunch(
         packages_to_install=["."],
