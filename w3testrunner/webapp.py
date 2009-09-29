@@ -1,3 +1,5 @@
+from __future__ import with_statement
+
 import base64
 import errno
 import httplib
@@ -5,6 +7,8 @@ import logging
 import os
 import random
 import re
+import select
+import subprocess
 import sys
 import threading
 import time
@@ -15,7 +19,10 @@ except ImportError:
     import json # Python >= 2.6
 
 from webob import Request
+from webob.headerdict import HeaderDict
 from paste.urlparser import StaticURLParser
+from paste.httpserver import WSGIHandler
+from paste.cgiapp import CGIApplication, CGIWriter, StdinReader
 import paste.httpserver
 from wsgi_jsonrpc import WSGIJSONRPCApplication
 
@@ -115,42 +122,9 @@ class RPC(object):
     def set_result(self, testid, result, did_start_notify):
         self.runner.set_result(testid, result, did_start_notify)
 
-class MimeUpdaterMiddleware(object):
-    def __init__(self, application, mime_mappings):
-        self.application = application
-        self.mime_mappings = mime_mappings
-
-    def __call__(self, environ, start_response):
-        def start_mime_update(status, response_headers, exc_info=None):
-            ext = os.path.splitext(environ["SCRIPT_NAME"])[1].lower()[1:]
-
-            if ext in self.mime_mappings:
-                response_headers = [(name,value) for name, value in
-                                    response_headers
-                                    if name.lower() != "content-type"]
-                response_headers.append(("Content-Type",
-                                         self.mime_mappings[ext]))
-
-            return start_response(status, response_headers, exc_info)
-
-        return self.application(environ, start_mime_update)
-
-# See also: http://mxr.mozilla.org/mozilla-central/source/testing/mochitest/server.js#195
-MIME_MAPPINGS = {
-    "ico": "image/x-icon",
-    "xul": "application/vnd.mozilla.xul+xml",
-    "jar": "application/x-jar",
-    "ogg": "application/ogg",
-    "ogv": "video/ogg",
-    "oga": "audio/ogg",
-    "xml": "text/xml",
-    "xhtml": "application/xhtml+xml",
-    "svg": "image/svg+xml",
-}
-
 class RPCErrorMiddleware(object):
-    """Middleware that will notify the running in case of error.
-    
+    """Middleware that will notify the runner in case of error.
+
     It expects the target application to be using the JSON-RPC protocol.
     """
 
@@ -187,6 +161,138 @@ class RPCErrorMiddleware(object):
                                    body_json["error"]["message"]))
         return body
 
+class MimeAndHeadersUpdaterMiddleware(object):
+    HEADERS_FILE_SUFFIX = "^headers^"
+    # See also: http://mxr.mozilla.org/mozilla-central/source/testing/mochitest/server.js#195
+    MIME_MAPPINGS = {
+        "html": "text/html",
+        "ico": "image/x-icon",
+        "xul": "application/vnd.mozilla.xul+xml",
+        "jar": "application/x-jar",
+        "ogg": "application/ogg",
+        "ogv": "video/ogg",
+        "oga": "audio/ogg",
+        "xml": "text/xml",
+        "xhtml": "application/xhtml+xml",
+        "svg": "image/svg+xml",
+    }
+
+    def __init__(self, application, tests_path=None):
+        self.application = application
+        self.tests_path = tests_path
+
+    def _maybe_parse_headers_file(self, path_info):
+        if not self.tests_path:
+            return None, {}
+        path_info = path_info.lstrip("/")
+        target = os.path.normpath(os.path.join(self.tests_path, path_info))
+        if not os.path.isfile(target):
+            return None, {}
+
+        headers_file = target + self.HEADERS_FILE_SUFFIX
+        if not os.path.isfile(headers_file):
+            return None, {}
+
+        status = None
+        headers = {}
+        with open(headers_file) as f:
+            for l in f:
+                l = l.strip()
+                if not l:
+                    continue
+
+                if l.startswith("HTTP "):
+                    status = l[len("HTTP "):]
+                    continue
+                i = l.find(":")
+                if i < 0:
+                    log.warn("Invalid header line (%s) in file %s", l,
+                             headers_file)
+                    continue
+                key, val = l[:i], l[i + 1:]
+                headers[key.strip()] = val.strip()
+        return status, headers
+
+    def __call__(self, environ, start_response):
+        path_info = environ.get('PATH_INFO', '')
+
+        def start_mime_update(status, response_headers, exc_info=None):
+            ext = os.path.splitext(environ["SCRIPT_NAME"])[1].lower()[1:]
+
+            header_dict = HeaderDict.view_list(response_headers)
+            if ext in self.MIME_MAPPINGS:
+                header_dict["Content-Type"] = self.MIME_MAPPINGS[ext]
+
+            new_status, headers = self._maybe_parse_headers_file(path_info)
+            if new_status:
+                status = new_status
+
+            # HeaderDict.update() doesn't do what we need here.
+            for k, v in headers.iteritems():
+                header_dict[k] = v
+
+            return start_response(status, response_headers, exc_info)
+
+        return self.application(environ, start_mime_update)
+
+class PythonCGIApplication(CGIApplication):
+    """
+    Override CGIApplication to execute CGI scripts with the current Python
+    interpreter.
+
+    (and apply the patch from
+     http://trac.pythonpaste.org/pythonpaste/ticket/382).
+    """
+
+    def __call__(self, environ, start_response):
+        if 'REQUEST_URI' not in environ:
+            environ['REQUEST_URI'] = (
+                environ.get('SCRIPT_NAME', '')
+                + environ.get('PATH_INFO', ''))
+        if self.include_os_environ:
+            cgi_environ = os.environ.copy()
+        else:
+            cgi_environ = {}
+        for name in environ:
+            # Should unicode values be encoded?
+            if (name.upper() == name
+                and isinstance(environ[name], str)):
+                cgi_environ[name] = environ[name]
+        if self.query_string is not None:
+            old = cgi_environ.get('QUERY_STRING', '')
+            if old:
+                old += '&'
+            cgi_environ['QUERY_STRING'] = old + self.query_string
+        cgi_environ['SCRIPT_FILENAME'] = self.script
+        proc = subprocess.Popen(
+            # Begin Paste modification.
+            # The -u option is used prevent Python replacing \n to \r\n when
+            # writing to sys.stdout on Windows.
+            [sys.executable, '-u', self.script],
+            # End Paste modification.
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=cgi_environ,
+            cwd=os.path.dirname(self.script),
+            )
+        writer = CGIWriter(environ, start_response)
+        if select and sys.platform != 'win32':
+            proc_communicate(
+                proc,
+                stdin=StdinReader.from_environ(environ),
+                stdout=writer,
+                stderr=environ['wsgi.errors'])
+        else:
+            stdout, stderr = proc.communicate(StdinReader.from_environ(environ).read())
+            if stderr:
+                environ['wsgi.errors'].write(stderr)
+            writer.write(stdout)
+        if not writer.headers_finished:
+            start_response(writer.status, writer.headers)
+        return []
+
+
 class WebApp(object):
     def __init__(self, runner):
         self.runner = runner
@@ -196,10 +302,9 @@ class WebApp(object):
 
         thisdir = os.path.dirname(os.path.abspath(__file__))
 
-        self.resourcesapp = MimeUpdaterMiddleware(
+        self.resourcesapp = MimeAndHeadersUpdaterMiddleware(
             StaticURLParser(os.path.join(thisdir, "resources"),
-                            cache_max_age=60),
-            MIME_MAPPINGS)
+                            cache_max_age=60))
 
 
         self.rpc = RPC(self)
@@ -210,6 +315,7 @@ class WebApp(object):
         # transfering image data URLs.
         logging.getLogger('wsgi_jsonrpc').setLevel(logging.INFO)
 
+        self.tests_path = None
         self.localtests_app = None
 
         for i in range(5):
@@ -250,7 +356,7 @@ class WebApp(object):
                                         start_loop=False)
 
         self.running = True
-        log.debug('Serving on http://localhost:%s' % WEBAPP_PORT)
+        log.debug("Serving on http://localhost:%s" % WEBAPP_PORT)
 
         while self.running:
             #log.debug("Handling request")
@@ -259,11 +365,12 @@ class WebApp(object):
         log.debug("Web Server stopped")
 
     def enable_localtests(self, tests_path):
-        self.localtests_app = MimeUpdaterMiddleware(StaticURLParser(tests_path,
-                                                        cache_max_age=60),
-                                                    MIME_MAPPINGS)
+        self.tests_path = tests_path
+        self.localtests_app = MimeAndHeadersUpdaterMiddleware(
+            StaticURLParser(tests_path, cache_max_age=60), tests_path)
 
     def disable_localtests(self):
+        self.tests_path = None
         self.localtests_app = None
 
     def _create_report(self, req, start_response):
@@ -402,6 +509,8 @@ class WebApp(object):
 
         if (req.path_info == "/" or
             req.path_info == "/favicon.ico" or
+            req.path_info == ("/browsertest.js") or
+            req.path_info == ("/browsertest.css") or
             req.path_info.startswith("/testrunner") or
             # For MochiTests:
             req.path_info.startswith("/MochiKit") or
@@ -410,6 +519,11 @@ class WebApp(object):
 
         if req.path_info_peek() == "rpc":
             return self.rpcapp(environ, start_response)
+
+        if req.path_info.endswith(".py") and self.tests_path:
+            script = req.path_info.lstrip("/")
+            cgiapp = PythonCGIApplication({}, script=script, path=[self.tests_path])
+            return cgiapp(environ, start_response)
 
         if self.localtests_app:
             return self.localtests_app(environ, start_response)
