@@ -94,33 +94,44 @@ var MochitestRunner = Runner.extend({
     this._result.log = "";
 
     var self = this;
+
+    function checkState(funcName) {
+      if (self._finished) {
+        self._callbacks.onError(funcName + " called when test is finished");
+        return true;
+      }
+      if (!self._test) {
+        self._callbacks.onError(funcName + " called when no test is active");
+        return true;
+      }
+      return false;
+    }
+
     // Mochitests expect a "TestRunner" object on the parent frame with the
     // following properties:
     TestRunner.logEnabled = true;
     TestRunner.currentTestURL = this._test.url;
     TestRunner.logger = {
       log: function(str) {
-        LOG("TestRunner.logger.log called from test ", self._test.id, str);
-        if (self._finished)
+        if (checkState("TestRunner.logger.log"))
           return;
+
+        LOG("TestRunner.logger.log called from test ", self._test.id, str);
         self._result.pass_count += 1;
         self._result.log += str + "\n";
       },
       error: function(str) {
-        LOG("TestRunner.logger.error called from test ", self._test.id, str);
-        if (self._finished)
+        if (checkState("TestRunner.logger.error"))
           return;
+
+        LOG("TestRunner.logger.error called from test ", self._test.id, str);
         self._result.fail_count += 1;
         self._result.log += str + "\n";
       }
     };
     TestRunner.testFinished = function(doc) {
-      if (self._finished)
+      if (checkState("TestRunner.testFinished"))
         return;
-      if (!self._test) {
-        self._callbacks.onError("Unexpected testFinished call");
-        return;
-      }
 
       LOG("TestRunner.testFinished called from test");
       if (self._result.fail_count == 0)
@@ -140,6 +151,74 @@ var MochitestRunner = Runner.extend({
     delete TestRunner.currentTestURL;
     delete TestRunner.logger;
     delete TestRunner.testFinished;
+  }
+});
+
+// This object is accessed from the frame running Browsertests.
+var BrowsertestListener = {
+  _runner: null,
+  _checkState: function(funcName) {
+    if (!this._runner) {
+      LOG("Error: " + funcName + "called when no runner is active");
+      // XXX this error should probably be propagated, but we don't have a
+      // _callbacks object to use.
+      return true;
+    }
+    if (this._runner._finished) {
+      self._callbacks.onError(funcName + " called when test is finished");
+      return true;
+    }
+    if (!this._runner._test) {
+      self._callbacks.onError(funcName + " called when no test is active");
+      return true;
+    }
+    return false;
+  },
+
+  logAssertion: function(assertion) {
+    if (this._checkState("logAssertion"))
+      return;
+
+    LOG("BrowsertestListener.logAssertion called from test ",
+        this._runner._test.id, assertion);
+
+    if (assertion.result)
+      this._runner._result.pass_count += 1;
+    else
+      this._runner._result.fail_count += 1;
+
+    this._runner._result.log += assertion.message + "\n";
+  },
+
+  testFinished: function() {
+    if (this._checkState("testFinished"))
+      return;
+
+    LOG("BrowsertestListener.testFinished called from test");
+
+    if (this._runner._result.fail_count == 0)
+      this._runner._result.status = "pass";
+    this._runner._finish();
+  }
+};
+
+var BrowsertestRunner = Runner.extend({
+  _runInternal: function() {
+    this._result.pass_count = 0;
+    this._result.fail_count = 0;
+    this._result.log = "";
+
+    BrowsertestListener._runner = this;
+
+    this._iframe.src = this._test.url;
+    this._iframe.name = this._test.url;
+
+    this._activity("Frame loaded with test URL");
+  },
+
+  _cleanup: function() {
+    this._super();
+    BrowsertestListener._runner = null;
   }
 });
 

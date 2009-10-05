@@ -1,22 +1,18 @@
-.test_ok {
+.assertion_pass {
   color: #0d0;
   display: none;
 }
 
-.test_not_ok {
+.assertion_fail {
   color: red;
   display: block;
 }
 
-.test_todo {
-  /* color: orange; */
-  display: block;
-}
-
-.test_ok, .test_not_ok, .test_todo {
+.assertion_pass, .assertion_fail {
   border-bottom-width: 2px;
   border-bottom-style: solid;
   border-bottom-color: black;
+  display: none;
 }
 
 .all_pass {
@@ -27,22 +23,14 @@
   background-color: red;
 }
 
-.todo_only {
-  background-color: orange;
-}
-
-#tests_report {
+#assertions_report {
   border-width: 2px;
   border-style: solid;
   width: 20em;
   display: table;
 }
 
-.test_ok, .test_not_ok {
-  display: none;
-}
-
-#tests_report.show_test_ok .test_ok,
-#tests_report.show_test_not_ok .test_not_ok {
+#assertions_report.show_assertion_pass .assertion_pass,
+#assertions_report.show_assertion_fail .assertion_fail {
   display: block;
 }

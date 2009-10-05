@@ -7,18 +7,17 @@ class TestsLoader(object):
         self.load_info = load_info
 
     def load(self):
-        """Should load the tests and store the results on the runner. It may
-        also need to setup environment for running the loaded tests"""
+        """Load the tests and store the results on the runner. It may also
+        need to setup environment for running the loaded tests."""
         raise NotImplemented()
 
     def cleanup(self):
-        """Should cleanup everything the loader has setup for running the
-        tests"""
+        """Cleanup everything the loader has setup for running the tests."""
         pass
 
     @classmethod
     def add_options(cls, parser):
-        """Override this to add specific options for this parser"""
+        """Override this to add specific options for this parser."""
         pass
 
     @classmethod

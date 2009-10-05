@@ -2,251 +2,431 @@
 //
 // http://trac.mochikit.com/browser/mochikit/trunk/tests/SimpleTest/SimpleTest.js
 // http://mxr.mozilla.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/SimpleTest.js
+//
+// Assertion functions inspired by QUnit (http://docs.jquery.com/QUnit).
+// http://github.com/jquery/qunit/raw/master/qunit/qunit.js
 
 (function() {
 
 //  --------------- Internal state and functions -----------------
 
-var _parentRunner = null;
-if (typeof(parent) != "undefined" && parent.BrowserTestRunner) {
-  _parentRunner = parent.BrowserTestRunner;
+var _parentListener = null;
+if (typeof(parent) != "undefined" && parent.BrowsertestListener) {
+  _parentListener = parent.BrowsertestListener;
 }
 
-_tests = [];
+var _assertions = [];
 
-// TODO should pass the test object to the parent and let it format the log
-// message itself.
-_logResult = function(test, passString, failString) {
-  if (!_parentRunner)
+function _logAssertion(assertion) {
+  if (!_parentListener)
     return;
-  var msg = test.result ? passString : failString;
-  msg += " | " + test.name;
-  var diag = test.diag ? " - " + test.diag : "";
-  if (test.result) {
-    _parentRunner.logger.log(msg);
-  } else {
-    _parentRunner.logger.error(msg + diag);
-  }
+  _parentListener.logAssertion(assertion);
 };
+
+//  --------------- Utilities -----------------
+
+// Test for equality any JavaScript type.
+// Discussions and reference: http://philrathe.com/articles/equiv
+// Test suites: http://philrathe.com/tests/equiv
+// Author: Philippe Rathé <prathe@gmail.com>
+var _equiv = function () {
+
+    var innerEquiv; // the real equiv function
+    var callers = []; // stack to decide between skip/abort functions
+
+
+    // Determine what is o.
+    function hoozit(o) {
+        if (o.constructor === String) {
+            return "string";
+
+        } else if (o.constructor === Boolean) {
+            return "boolean";
+
+        } else if (o.constructor === Number) {
+
+            if (isNaN(o)) {
+                return "nan";
+            } else {
+                return "number";
+            }
+
+        } else if (typeof o === "undefined") {
+            return "undefined";
+
+        // consider: typeof null === object
+        } else if (o === null) {
+            return "null";
+
+        // consider: typeof [] === object
+        } else if (o instanceof Array) {
+            return "array";
+
+        // consider: typeof new Date() === object
+        } else if (o instanceof Date) {
+            return "date";
+
+        // consider: /./ instanceof Object;
+        //           /./ instanceof RegExp;
+        //          typeof /./ === "function"; // => false in IE and Opera,
+        //                                          true in FF and Safari
+        } else if (o instanceof RegExp) {
+            return "regexp";
+
+        } else if (typeof o === "object") {
+            return "object";
+
+        } else if (o instanceof Function) {
+            return "function";
+        } else {
+            return undefined;
+        }
+    }
+
+    // Call the o related callback with the given arguments.
+    function bindCallbacks(o, callbacks, args) {
+        var prop = hoozit(o);
+        if (prop) {
+            if (hoozit(callbacks[prop]) === "function") {
+                return callbacks[prop].apply(callbacks, args);
+            } else {
+                return callbacks[prop]; // or undefined
+            }
+        }
+    }
+
+    var callbacks = function () {
+
+        // for string, boolean, number and null
+        function useStrictEquality(b, a) {
+            if (b instanceof a.constructor || a instanceof b.constructor) {
+                // to catch short annotaion VS 'new' annotation of a declaration
+                // e.g. var i = 1;
+                //      var j = new Number(1);
+                return a == b;
+            } else {
+                return a === b;
+            }
+        }
+
+        return {
+            "string": useStrictEquality,
+            "boolean": useStrictEquality,
+            "number": useStrictEquality,
+            "null": useStrictEquality,
+            "undefined": useStrictEquality,
+
+            "nan": function (b) {
+                return isNaN(b);
+            },
+
+            "date": function (b, a) {
+                return hoozit(b) === "date" && a.valueOf() === b.valueOf();
+            },
+
+            "regexp": function (b, a) {
+                return hoozit(b) === "regexp" &&
+                    a.source === b.source && // the regex itself
+                    a.global === b.global && // and its modifers (gmi) ...
+                    a.ignoreCase === b.ignoreCase &&
+                    a.multiline === b.multiline;
+            },
+
+            // - skip when the property is a method of an instance (OOP)
+            // - abort otherwise,
+            //   initial === would have catch identical references anyway
+            "function": function () {
+                var caller = callers[callers.length - 1];
+                return caller !== Object &&
+                        typeof caller !== "undefined";
+            },
+
+            "array": function (b, a) {
+                var i;
+                var len;
+
+                // b could be an object literal here
+                if ( ! (hoozit(b) === "array")) {
+                    return false;
+                }
+
+                len = a.length;
+                if (len !== b.length) { // safe and faster
+                    return false;
+                }
+                for (i = 0; i < len; i++) {
+                    if ( ! innerEquiv(a[i], b[i])) {
+                        return false;
+                    }
+                }
+                return true;
+            },
+
+            "object": function (b, a) {
+                var i;
+                var eq = true; // unless we can proove it
+                var aProperties = [], bProperties = []; // collection of strings
+
+                // comparing constructors is more strict than using instanceof
+                if ( a.constructor !== b.constructor) {
+                    return false;
+                }
+
+                // stack constructor before traversing properties
+                callers.push(a.constructor);
+
+                for (i in a) { // be strict: don't ensures hasOwnProperty and go deep
+
+                    aProperties.push(i); // collect a's properties
+
+                    if ( ! innerEquiv(a[i], b[i])) {
+                        eq = false;
+                    }
+                }
+
+                callers.pop(); // unstack, we are done
+
+                for (i in b) {
+                    bProperties.push(i); // collect b's properties
+                }
+
+                // Ensures identical properties name
+                return eq && innerEquiv(aProperties.sort(), bProperties.sort());
+            }
+        };
+    }();
+
+    innerEquiv = function () { // can take multiple arguments
+        var args = Array.prototype.slice.apply(arguments);
+        if (args.length < 2) {
+            return true; // end transition
+        }
+
+        return (function (a, b) {
+            if (a === b) {
+                return true; // catch the most you can
+            } else if (a === null || b === null || typeof a === "undefined" || typeof b === "undefined" || hoozit(a) !== hoozit(b)) {
+                return false; // don't lose time with error prone cases
+            } else {
+                return bindCallbacks(a, callbacks, [b, a]);
+            }
+
+        // apply transition with (1..n) arguments
+        })(args[0], args[1]) && arguments.callee.apply(this, args.splice(1, args.length -1));
+    };
+
+    return innerEquiv;
+
+}();
+
+/**
+ * jsDump
+ * Copyright (c) 2008 Ariel Flesler - aflesler(at)gmail(dot)com | http://flesler.blogspot.com
+ * Licensed under BSD (http://www.opensource.org/licenses/bsd-license.php)
+ * Date: 5/15/2008
+ * @projectDescription Advanced and extensible data dumping for Javascript.
+ * @version 1.0.0
+ * @author Ariel Flesler
+ * @link {http://flesler.blogspot.com/2008/05/jsdump-pretty-dump-of-any-javascript.html}
+ */
+var _jsDump = (function() {
+	function quote( str ) {
+		return '"' + str.toString().replace(/"/g, '\\"') + '"';
+	};
+	function literal( o ) {
+		return o + '';
+	};
+	function join( pre, arr, post ) {
+		var s = jsDump.separator(),
+			base = jsDump.indent(),
+			inner = jsDump.indent(1);
+		if ( arr.join )
+			arr = arr.join( ',' + s + inner );
+		if ( !arr )
+			return pre + post;
+		return [ pre, inner + arr, base + post ].join(s);
+	};
+	function array( arr ) {
+		var i = arr.length,	ret = Array(i);
+		this.up();
+		while ( i-- )
+			ret[i] = this.parse( arr[i] );
+		this.down();
+		return join( '[', ret, ']' );
+	};
+
+	var reName = /^function (\w+)/;
+
+	var jsDump = {
+		parse:function( obj, type ) { //type is used mostly internally, you can fix a (custom)type in advance
+			var	parser = this.parsers[ type || this.typeOf(obj) ];
+			type = typeof parser;
+
+			return type == 'function' ? parser.call( this, obj ) :
+				   type == 'string' ? parser :
+				   this.parsers.error;
+		},
+		typeOf:function( obj ) {
+			var type = typeof obj,
+				f = 'function';//we'll use it 3 times, save it
+			return type != 'object' && type != f ? type :
+				!obj ? 'null' :
+				obj.exec ? 'regexp' :// some browsers (FF) consider regexps functions
+				obj.getHours ? 'date' :
+				obj.scrollBy ?  'window' :
+				obj.nodeName == '#document' ? 'document' :
+				obj.nodeName ? 'node' :
+				obj.item ? 'nodelist' : // Safari reports nodelists as functions
+				obj.callee ? 'arguments' :
+				obj.call || obj.constructor != Array && //an array would also fall on this hack
+					(obj+'').indexOf(f) != -1 ? f : //IE reports functions like alert, as objects
+				'length' in obj ? 'array' :
+				type;
+		},
+		separator:function() {
+			return this.multiline ?	this.HTML ? '<br />' : '\n' : this.HTML ? '&nbsp;' : ' ';
+		},
+		indent:function( extra ) {// extra can be a number, shortcut for increasing-calling-decreasing
+			if ( !this.multiline )
+				return '';
+			var chr = this.indentChar;
+			if ( this.HTML )
+				chr = chr.replace(/\t/g,'   ').replace(/ /g,'&nbsp;');
+			return Array( this._depth_ + (extra||0) ).join(chr);
+		},
+		up:function( a ) {
+			this._depth_ += a || 1;
+		},
+		down:function( a ) {
+			this._depth_ -= a || 1;
+		},
+		setParser:function( name, parser ) {
+			this.parsers[name] = parser;
+		},
+		// The next 3 are exposed so you can use them
+		quote:quote,
+		literal:literal,
+		join:join,
+		//
+		_depth_: 1,
+		// This is the list of parsers, to modify them, use jsDump.setParser
+		parsers:{
+			window: '[Window]',
+			document: '[Document]',
+			error:'[ERROR]', //when no parser is found, shouldn't happen
+			unknown: '[Unknown]',
+			'null':'null',
+			undefined:'undefined',
+			'function':function( fn ) {
+				var ret = 'function',
+					name = 'name' in fn ? fn.name : (reName.exec(fn)||[])[1];//functions never have name in IE
+				if ( name )
+					ret += ' ' + name;
+				ret += '(';
+
+				ret = [ ret, this.parse( fn, 'functionArgs' ), '){'].join('');
+				return join( ret, this.parse(fn,'functionCode'), '}' );
+			},
+			array: array,
+			nodelist: array,
+			arguments: array,
+			object:function( map ) {
+				var ret = [ ];
+				this.up();
+				for ( var key in map )
+					ret.push( this.parse(key,'key') + ': ' + this.parse(map[key]) );
+				this.down();
+				return join( '{', ret, '}' );
+			},
+			node:function( node ) {
+				var open = this.HTML ? '&lt;' : '<',
+					close = this.HTML ? '&gt;' : '>';
+
+				var tag = node.nodeName.toLowerCase(),
+					ret = open + tag;
+
+				for ( var a in this.DOMAttrs ) {
+					var val = node[this.DOMAttrs[a]];
+					if ( val )
+						ret += ' ' + a + '=' + this.parse( val, 'attribute' );
+				}
+				return ret + close + open + '/' + tag + close;
+			},
+			functionArgs:function( fn ) {//function calls it internally, it's the arguments part of the function
+				var l = fn.length;
+				if ( !l ) return '';
+
+				var args = Array(l);
+				while ( l-- )
+					args[l] = String.fromCharCode(97+l);//97 is 'a'
+				return ' ' + args.join(', ') + ' ';
+			},
+			key:quote, //object calls it internally, the key part of an item in a map
+			functionCode:'[code]', //function calls it internally, it's the content of the function
+			attribute:quote, //node calls it internally, it's an html attribute value
+			string:quote,
+			date:quote,
+			regexp:literal, //regex
+			number:literal,
+			'boolean':literal
+		},
+		DOMAttrs:{//attributes to dump from nodes, name=>realName
+			id:'id',
+			name:'name',
+			'class':'className'
+		},
+		HTML:true,//if true, entities are escaped ( <, >, \t, space and \n )
+		indentChar:'   ',//indentation unit
+		multiline:true //if true, items in a collection, are separated by a \n, else just a space.
+	};
+
+	return jsDump;
+})();
+
 
 //  --------------- Assertion functions -----------------
 
 /**
- * Something like assert.
+ * Asserts true.
+ * @example ok("foo" in obj2, "obj2 has no foo property");
 **/
-ok = function (condition, name, diag) {
-  var test = {'result': !!condition, 'name': name, 'diag': diag};
-  _logResult(test, "TEST-PASS", "TEST-UNEXPECTED-FAIL");
-  _tests.push(test);
+function ok(a, message) {
+  message = _assertions.length + " | " + (a ? "pass" : "fail") +
+            " | " + (message || "(no message)");
+  var assertion = {
+    result: !!a,
+    message: message
+  };
+  _assertions.push(assertion);
+  _logAssertion(assertion);
 };
 
-// XXX repr() was removed from the failure message.
-// Implement something equivalent?
+function _comparisonAssertion(result, actual, expected, message) {
+  ok(result, result ? expected :
+             "expected: " + _jsDump.parse(expected) + " got: " +
+             _jsDump.parse(actual));
+};
 
 /**
- * Roughly equivalent to ok(a==b, name)
+ * Checks that the first two arguments are equal, with an optional message.
+ * Prints out both actual and expected values.
+ *
+ * Prefered to ok(actual == expected, message)
+ *
+ * @example equals(obj1, 22, "obj1 value is not correct");
+ *
+ * @param Object actual
+ * @param Object expected
+ * @param String message (optional)
 **/
-is = function (a, b, name) {
-  ok(a == b, name, "got " + a + ", expected " + b);
+function equals(actual, expected, message) {
+  _comparisonAssertion(expected == actual, actual, expected, message);
 };
+// Alias for Mochitest compatibility.
+var is = equals;
 
-isnot = function (a, b, name) {
-  ok(a != b, name, "Didn't expect " + a + ", but got it.");
-};
-
-//  isDeeply() implementation
-
-DNE = {dne: 'Does not exist'};
-LF = "\r\n";
-
-_isRef = function (object) {
-  var type = typeof(object);
-  return type == 'object' || type == 'function';
-};
-
-_typeOf = function (object) {
-  var c = Object.prototype.toString.apply(object);
-  var name = c.substring(8, c.length - 1);
-  if (name != 'Object') return name;
-  // It may be a non-core class. Try to extract the class name from
-  // the constructor function. This may not work in all implementations.
-  if (/function ([^(\s]+)/.test(Function.toString.call(object.constructor))) {
-    return RegExp.$1;
-  }
-  // No idea. :-(
-  return name;
-};
-
-_isa = function (object, clas) {
-  return _typeOf(object) == clas;
-};
-
-_deepCheck = function (e1, e2, stack, seen) {
-  var ok = false;
-  // Either they're both references or both not.
-  var sameRef = !(!_isRef(e1) ^ !_isRef(e2));
-  if (e1 == null && e2 == null) {
-    ok = true;
-  } else if (e1 != null ^ e2 != null) {
-    ok = false;
-  } else if (e1 == DNE ^ e2 == DNE) {
-    ok = false;
-  } else if (sameRef && e1 == e2) {
-    // Handles primitives and any variables that reference the same
-    // object, including functions.
-    ok = true;
-  } else if (_isa(e1, 'Array') && _isa(e2, 'Array')) {
-    ok = _eqArray(e1, e2, stack, seen);
-  } else if (typeof e1 == "object" && typeof e2 == "object") {
-    ok = _eqAssoc(e1, e2, stack, seen);
-  } else {
-    // If we get here, they're not the same (function references must
-    // always simply rererence the same function).
-    stack.push({ vals: [e1, e2] });
-    ok = false;
-  }
-  return ok;
-};
-
-_eqArray = function (a1, a2, stack, seen) {
-  // Return if they're the same object.
-  if (a1 == a2) return true;
-
-  // JavaScript objects have no unique identifiers, so we have to store
-  // references to them all in an array, and then compare the references
-  // directly. It's slow, but probably won't be much of an issue in
-  // practice. Start by making a local copy of the array to as to avoid
-  // confusing a reference seen more than once (such as [a, a]) for a
-  // circular reference.
-  for (var j = 0; j < seen.length; j++) {
-    if (seen[j][0] == a1) {
-      return seen[j][1] == a2;
-    }
-  }
-
-  // If we get here, we haven't seen a1 before, so store it with reference
-  // to a2.
-  seen.push([ a1, a2 ]);
-
-  var ok = true;
-  // Only examines enumerable attributes. Only works for numeric arrays!
-  // Associative arrays return 0. So call _eqAssoc() for them, instead.
-  var max = a1.length > a2.length ? a1.length : a2.length;
-  if (max == 0) return _eqAssoc(a1, a2, stack, seen);
-  for (var i = 0; i < max; i++) {
-    var e1 = i > a1.length - 1 ? DNE : a1[i];
-    var e2 = i > a2.length - 1 ? DNE : a2[i];
-    stack.push({ type: 'Array', idx: i, vals: [e1, e2] });
-    if ((ok = _deepCheck(e1, e2, stack, seen))) {
-      stack.pop();
-    } else {
-      break;
-    }
-  }
-  return ok;
-};
-
-_eqAssoc = function (o1, o2, stack, seen) {
-  // Return if they're the same object.
-  if (o1 == o2) return true;
-
-  // JavaScript objects have no unique identifiers, so we have to store
-  // references to them all in an array, and then compare the references
-  // directly. It's slow, but probably won't be much of an issue in
-  // practice. Start by making a local copy of the array to as to avoid
-  // confusing a reference seen more than once (such as [a, a]) for a
-  // circular reference.
-  seen = seen.slice(0);
-  for (var j = 0; j < seen.length; j++) {
-    if (seen[j][0] == o1) {
-      return seen[j][1] == o2;
-    }
-  }
-
-  // If we get here, we haven't seen o1 before, so store it with reference
-  // to o2.
-  seen.push([ o1, o2 ]);
-
-  // They should be of the same class.
-
-  var ok = true;
-  // Only examines enumerable attributes.
-  var o1Size = 0; for (var i in o1) o1Size++;
-  var o2Size = 0; for (var i in o2) o2Size++;
-  var bigger = o1Size > o2Size ? o1 : o2;
-  for (var i in bigger) {
-    var e1 = o1[i] == undefined ? DNE : o1[i];
-    var e2 = o2[i] == undefined ? DNE : o2[i];
-    stack.push({ type: 'Object', idx: i, vals: [e1, e2] });
-    if ((ok = _deepCheck(e1, e2, stack, seen))) {
-      stack.pop();
-    } else {
-      break;
-    }
-  }
-  return ok;
-};
-
-_formatStack = function (stack) {
-  var variable = '$Foo';
-  for (var i = 0; i < stack.length; i++) {
-    var entry = stack[i];
-    var type = entry['type'];
-    var idx = entry['idx'];
-    if (idx != null) {
-      if (/^\d+$/.test(idx)) {
-        // Numeric array index.
-        variable += '[' + idx + ']';
-      } else {
-        // Associative array index.
-        idx = idx.replace("'", "\\'");
-        variable += "['" + idx + "']";
-      }
-    }
-  }
-
-  var vals = stack[stack.length-1]['vals'].slice(0, 2);
-  var vars = [
-    variable.replace('$Foo',     'got'),
-    variable.replace('$Foo',     'expected')
-  ];
-
-  var out = "Structures begin differing at:" + LF;
-  for (var i = 0; i < vals.length; i++) {
-    var val = vals[i];
-    if (val == null) {
-      val = 'undefined';
-    } else {
-      val == DNE ? "Does not exist" : "'" + val + "'";
-    }
-  }
-
-  out += vars[0] + ' = ' + vals[0] + LF;
-  out += vars[1] + ' = ' + vals[1] + LF;
-
-  return '    ' + out;
-};
-
-
-isDeeply = function (it, as, name) {
-  var ok;
-  // ^ is the XOR operator.
-  if (_isRef(it) ^ _isRef(as)) {
-    // One's a reference, one isn't.
-    ok = false;
-  } else if (!_isRef(it) && !_isRef(as)) {
-    // Neither is an object.
-    ok = is(it, as, name);
-  } else {
-    // We have two objects. Do a deep comparison.
-    var stack = [], seen = [];
-    if ( _deepCheck(it, as, stack, seen)) {
-      ok = ok(true, name);
-    } else {
-      ok = ok(false, name, _formatStack(stack));
-    }
-  }
-  return ok;
+function same(actual, expected, message) {
+  _comparisonAssertion(_equiv(actual, expected), actual, expected, message);
 };
 
 //  --------------- Table of results displayed in the browser -----------------
@@ -281,7 +461,7 @@ function _createElement(name, attrs) {
   appendContent(el, children);
 
   return el;
-}
+};
 
 function _createElementFunc(name) {
   return function() {
@@ -291,7 +471,7 @@ function _createElementFunc(name) {
     }
     return _createElement.apply(null, args);
   }
-}
+};
 
 // shortcuts
 var A = _createElementFunc("a");
@@ -300,36 +480,33 @@ var DIV = _createElementFunc("div");
 var LINK = _createElementFunc("link");
 
 /**
- * Makes a test report, returns it as a DIV element.
+ * Makes an assertions report, returns it as a DIV element.
 **/
-_createReportDiv = function () {
+function _createReportDiv() {
 
   var passed = 0;
   var failed = 0;
 
   var results = [];
-  for (var i = 0; i < _tests.length; i++) {
-    var test = _tests[i];
-    var cls, msg;
-    var diag = test.diag ? " - " + test.diag : "";
-    if (test.result) {
+  for (var i = 0; i < _assertions.length; i++) {
+    var assertion = _assertions[i];
+    var cls;
+    if (assertion.result) {
       passed++;
-      cls = "test_ok";
-      msg = "passed | " + test.name;
+      cls = "assertion_pass";
     } else {
       failed++;
-      cls = "test_not_ok";
-      msg = "failed | " + test.name + diag;
+      cls = "assertion_fail";
     }
-    results.push(DIV({"class": cls}, msg));
+    results.push(DIV({"class": cls}, assertion.message));
   }
 
   var summary_class = ((failed == 0) ? 'all_pass' : 'some_fail');
 
-  return DIV({'class': 'show_test_not_ok', 'id': 'tests_report'},
-    DIV({'class': 'tests_summary ' + summary_class},
-      DIV({'class': 'tests_passed'}, "Passed: " + passed),
-      DIV({'class': 'tests_failed'}, "Failed: " + failed)
+  return DIV({'class': 'show_assertion_fail', 'id': 'assertions_report'},
+    DIV({'class': 'assertions_summary ' + summary_class},
+      DIV({'class': 'asssertions_passed'}, "Passed: " + passed),
+      DIV({'class': 'assertoins_failed'}, "Failed: " + failed)
     ),
     results
   );
@@ -338,8 +515,8 @@ _createReportDiv = function () {
 /**
  * Toggle visibility for divs with a specific class.
 **/
-_toggleReportDivClass = function (cls, event) {
-  var reportDiv = document.getElementById('tests_report');
+function _toggleReportDivClass(cls, event) {
+  var reportDiv = document.getElementById('assertions_report');
 
   if (reportDiv.className.search('(^|\\s)' + cls + '(\\s|$)') != -1) {
     reportDiv.className = reportDiv.className.replace(
@@ -356,7 +533,7 @@ _toggleReportDivClass = function (cls, event) {
 /**
  * Shows the report in the browser
 **/
-_showReport = function() {
+function _showReport() {
   // Add css stylesheet.
   var cssLink = LINK({'rel': 'stylesheet', 'type': 'text/css',
                       'href': '/browsertest.css'}, null);
@@ -364,13 +541,13 @@ _showReport = function() {
   if (head)
     head.appendChild(cssLink);
 
-  var togglePassed = A({'href': '#'}, "Toggle passed checks");
-  var toggleFailed = A({'href': '#'}, "Toggle failed checks");
+  var togglePassed = A({'href': '#'}, "Toggle passed assertions");
+  var toggleFailed = A({'href': '#'}, "Toggle failed assertions");
   togglePassed.onclick = function(event) {
-    _toggleReportDivClass('show_test_ok', event);
+    _toggleReportDivClass('show_assertion_pass', event);
   };
   toggleFailed.onclick = function(event) {
-    _toggleReportDivClass('show_test_not_ok', event);
+    _toggleReportDivClass('show_assertion_fail', event);
   };
   var body = document.body;  // Handles HTML documents
   if (!body) {
@@ -400,14 +577,13 @@ _showReport = function() {
 /**
  * Finishes the tests.
 **/
-finish = function () {
-  if (_tests.length == 0)
-    ok(false, "No checks actually run.");
+function finish() {
+  if (_assertions.length == 0)
+    ok(false, "No assertions were run.");
 
   _showReport();
-  if (_parentRunner) {
-    // XXX pass document?
-    _parentRunner.testFinished(document);
+  if (_parentListener) {
+    _parentListener.testFinished();
   }
 };
 
@@ -415,6 +591,7 @@ finish = function () {
 // can't rely on it to catch all tests errors.
 var _oldOnError = window.onerror;
 window.onerror = function simpletestOnerror(errorMsg, url, lineNumber) {
+  window.onerror = null;
   var funcIdentifier = "[browsertest.js, window.onerror] ";
 
   ok(false, funcIdentifier + "An error occurred", errorMsg);
@@ -432,19 +609,20 @@ window.onerror = function simpletestOnerror(errorMsg, url, lineNumber) {
 
   // Need to call finish() manually here, yet let the test actually end first.
   setTimeout(finish, 0);
-}
+};
 
 
 //  --------------- Public symbols export -----------------
 
-window.ok = ok;
-window.is = is;
-window.isnot = isnot;
-window.isDeeply = isDeeply;
-window.finish = finish;
-
-window.BrowserTest = {
+window.Browsertest = {
   // Privileged functions here.
 };
+
+var globals = ["ok", "is", "equals", "same", "finish"];
+for (var i = 0; i < globals.length; i++) {
+  var fn = globals[i];
+  window[fn] = eval(fn);
+  Browsertest[fn] = this[fn];
+}
 
 })();

@@ -512,7 +512,7 @@ class WebApp(object):
             req.path_info == ("/browsertest.js") or
             req.path_info == ("/browsertest.css") or
             req.path_info.startswith("/testrunner") or
-            # For MochiTests:
+            # For Mochitests:
             req.path_info.startswith("/MochiKit") or
             req.path_info.startswith("/tests/SimpleTest/")):
             return self.resourcesapp(environ, start_response)

@@ -238,6 +238,49 @@ class Mochitest(ImportedTest):
         self._fixup_test(test, path_as_id=self.path)
         return test
 
+# XXX refactor duplicated code with Mochitest.
+class Browsertest(ImportedTest):
+    def __init__(self, path):
+        super(Browsertest, self).__init__(path)
+        self.path = path
+
+    def exists(self):
+        dir, file = os.path.split(self.path)
+        fullpath = join(self.tests_dir, self.path)
+        if not os.path.isfile(fullpath):
+            return False
+        with open(fullpath) as f:
+            # XXX hacky way of detecting the Browsertest format.
+            if not "/browsertest.js" in f.read():
+                return False
+
+        # from mozilla/testing/mochitest/server.js :: isTest()
+        # A bit more restrictive though: filename must start with "test_", not
+        # only contain that string.
+        return file.startswith("test_") and \
+            not ".js" in file and \
+            not ".css" in file and \
+            not re.search("\^headers\^$", file) and \
+            not file.endswith("-expected.txt") # Added this condition
+                                               # to skip layouttests.
+
+    def _compute_flags(self, test):
+        pass
+
+    def create_test(self):
+        assert self.exists()
+        dir, file = os.path.split(self.path)
+
+        test = Test()
+        test.type = "browsertest"
+        full_path = join(self.tests_dir, self.path)
+        assert os.path.exists(full_path), "path %s does not exist" % full_path
+
+        test.resources = set()
+        test.test_resources = set([self.path])
+        self._fixup_test(test, path_as_id=self.path)
+        return test
+
 class Layouttest(ImportedTest):
     REPLACE_EXT_RE = re.compile("\.[^\.]*$")
     LTC_CALLS_RE = re.compile("layoutTestController\.(\w+)")
@@ -701,7 +744,7 @@ class TestsExtractor(object):
     def __init__(self, tests_dir=None):
         # The order of importers is important. In case of ambiguity, the first
         # importer that could locate a test will win.
-        self.importers = [Layouttest, Mochitest, Reftest]
+        self.importers = [Browsertest, Layouttest, Mochitest, Reftest]
         self.tests_dir = tests_dir
 
     def _toposixpath(self, path):

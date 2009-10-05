@@ -248,7 +248,7 @@ var TestRunner = TR = {
     $("#resultDetail .typeSpecific").hide();
     $("#resultDetail .typeSpecific." + test.type).show();
 
-    if (test.type == "mochitest") {
+    if (test.type == "mochitest" || test.type == "browsertest") {
       $("#resultDetailPassCount").text(test.result.pass_count);
       $("#resultDetailFailCount").text(test.result.fail_count);
       $("#resultDetailLog").text(test.result.log);
@@ -446,7 +446,7 @@ var TestRunner = TR = {
           }
 
           var typeSpecificDetail = "";
-          if (test.type == "mochitest") {
+          if (test.type == "mochitest" || test.type == "browsertest") {
             typeSpecificDetail = urlLink(test.url, "URL");
           } else if (test.type == "reftest") {
             typeSpecificDetail = "<dt>Comparison type</dt>" +
@@ -551,6 +551,7 @@ var TestRunner = TR = {
 
     var typeToClass = {
       mochitest: MochitestRunner,
+      browsertest: BrowsertestRunner,
       reftest: ReftestRunner
     };
     var runnerClass = typeToClass[test.type]
