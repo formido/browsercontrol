@@ -22,7 +22,8 @@ from webob import Request
 from webob.headerdict import HeaderDict
 from paste.urlparser import StaticURLParser
 from paste.httpserver import WSGIHandler
-from paste.cgiapp import CGIApplication, CGIWriter, StdinReader
+from paste.cgiapp import CGIApplication, CGIWriter, StdinReader, \
+                         proc_communicate
 import paste.httpserver
 from wsgi_jsonrpc import WSGIJSONRPCApplication
 
