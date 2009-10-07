@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 NEEDS_TESTS, RUNNING, FINISHED, STOPPED, ERROR = range(5)
 
 class Runner(object):
-    def __init__(self, options):
+    def __init__(self, options, start_loop=True):
         self.options = options
         self.running = False
         self.last_loader = None
@@ -24,6 +24,7 @@ class Runner(object):
         self.hang_timer = None
         self.last_hung_testid = None
         self.webapp = WebApp(self)
+        self.start_loop = start_loop
         self.reset()
         # Batch mode is active if there's a browser to control.
         self.batch = bool(self.options.browser)
@@ -53,6 +54,9 @@ class Runner(object):
         if not self.batch:
             log.info("The runner is started. You should now point your "
                      "browser to http://localhost:8888/")
+
+        if not self.start_loop:
+            return
 
         self.running = True
         try:
@@ -149,7 +153,6 @@ class Runner(object):
         log.info("Loading tests using type: %s load_info: %s", type, load_info)
         self.reset()
 
-        # TODO: dynamically locate the matching loader.
         loader_classes = [lc for lc in testsloaders.LOADERS if lc.type == type]
         if len(loader_classes) == 0:
             raise Exception("Can't find a loader for type %s", type)
@@ -157,11 +160,15 @@ class Runner(object):
         assert len(loader_classes) == 1, "Duplicate loaders?"
 
         loader = loader_classes[0](self, load_info)
-        loader.load()
+        tests = loader.load()
         self.last_loader = loader
-        if not self.tests:
+        if not tests:
             raise LoaderException("Couldn't load any tests")
 
+        self.set_tests(tests)
+
+    def set_tests(self, tests):
+        self.tests = tests
         self.testid_to_test = dict([(test["id"], test) for test in self.tests])
         self.status = STOPPED
 
@@ -171,7 +178,7 @@ class Runner(object):
             return
 
         if self.status == ERROR:
-            log.warn("Can't override ERROR status. reset or load_tests "
+            log.warn("Can't override ERROR status. reset() or load_tests() "
                      "should be called")
             return
 

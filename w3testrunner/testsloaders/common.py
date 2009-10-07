@@ -7,8 +7,10 @@ class TestsLoader(object):
         self.load_info = load_info
 
     def load(self):
-        """Load the tests and store the results on the runner. It may also
-        need to setup environment for running the loaded tests."""
+        """Load the tests and return them as a list.
+
+        Implementors may also need to setup environment for running the loaded
+        tests."""
         raise NotImplemented()
 
     def cleanup(self):

@@ -41,7 +41,7 @@ class LocalTestsLoaderTest(unittest.TestCase):
         runner = MockRunner()
         loader = LocalTestsLoader(runner, tests_dir)
         self.assertEqual(runner.webapp.tests_path, None)
-        loader.load()
+        tests = loader.load()
         self.assertEqual(runner.webapp.tests_path, tests_dir)
 
         expected_tests = [{
@@ -78,6 +78,6 @@ class LocalTestsLoaderTest(unittest.TestCase):
             'url': 'http://localhost:8888/test_browser_pass.html',
             'url2': None
         }]
-        self.assertTestsEquals(runner.tests, expected_tests)
+        self.assertTestsEquals(tests, expected_tests)
         loader.cleanup()
         self.assertEqual(runner.webapp.tests_path, None)

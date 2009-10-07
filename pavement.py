@@ -23,14 +23,14 @@ else:
     platform = "mac"
 
 install_requires = [
-    'WebOb',
-    'Paste',
-    'wsgi-jsonrpc',
+    "WebOb",
+    "Paste",
+    "lovely.jsonrpc",
     # Python Imaging Library should be installed from the .exe
     # on Windows.
-    #'PIL',
+    #"PIL",
     # ... same story for Python Win32.
-    #'python-win32',
+    #"python-win32",
 ]
 try:
     import json
@@ -74,10 +74,10 @@ options(
 @task
 def post_install():
     if platform == "win":
-        bin_dir = 'Scripts'
+        bin_dir = "Scripts"
     else:
-        bin_dir = 'bin'
-    easy_install = os.path.join(bin_dir, 'easy_install')
+        bin_dir = "bin"
+    easy_install = os.path.join(bin_dir, "easy_install")
     # Try to run it from $PATH
     if not os.path.exists(easy_install):
         easy_install = "easy_install"

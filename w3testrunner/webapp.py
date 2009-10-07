@@ -18,14 +18,14 @@ try:
 except ImportError:
     import json # Python >= 2.6
 
-from webob import Request
-from webob.headerdict import HeaderDict
+from lovely.jsonrpc import dispatcher, wsgi
 from paste.urlparser import StaticURLParser
 from paste.httpserver import WSGIHandler
 from paste.cgiapp import CGIApplication, CGIWriter, StdinReader, \
                          proc_communicate
 import paste.httpserver
-from wsgi_jsonrpc import WSGIJSONRPCApplication
+from webob import Request
+from webob.headerdict import HeaderDict
 
 from w3testrunner.imagecompare import ImageComparator, ImageCompareException
 from w3testrunner.testsloaders import LoaderException
@@ -92,7 +92,6 @@ class RPC(object):
             return {
                 "success": False,
                 "message": str(e)
-                # path? or image string?
             }
         self.screenshot1_id = -1
 
@@ -307,14 +306,14 @@ class WebApp(object):
             StaticURLParser(os.path.join(thisdir, "resources"),
                             cache_max_age=60))
 
-
         self.rpc = RPC(self)
-        self.rpcapp = RPCErrorMiddleware(WSGIJSONRPCApplication(
-                                             instance=self.rpc),
-                                         self.runner)
-        # Disable wsgi_jsonrpc debug messages which can be quite large when
+        rpcdispatcher = dispatcher.JSONRPCDispatcher(RPC(self))
+        self.rpcapp = wsgi.WSGIJSONRPCApplication({'rpc': rpcdispatcher})
+        self.rpcapp = RPCErrorMiddleware(self.rpcapp, self.runner)
+
+        # Disable lovely.jsonrpc debug messages which can be quite large when
         # transfering image data URLs.
-        logging.getLogger('wsgi_jsonrpc').setLevel(logging.INFO)
+        logging.getLogger('lovely.jsonrpc').setLevel(logging.INFO)
 
         self.tests_path = None
         self.localtests_app = None

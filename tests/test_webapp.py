@@ -22,6 +22,15 @@ class MockRunner(object):
 
 class TestWebApp(unittest.TestCase):
 
+    @classmethod
+    def setupClass(cls):
+        mock_runner = MockRunner()
+        cls.webapp = WebApp(mock_runner)
+
+    @classmethod
+    def teardownClass(cls):
+        cls.webapp.running = False
+
     def testRoot(self):
         conn = httplib.HTTPConnection("localhost", 8888)
         conn.request("GET", "/")
@@ -42,7 +51,7 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(response.reason, "Not found")
         self.assertEqual(response.getheader("content-type"), "text/plain")
 
-        webapp.enable_localtests(webapp_data_dir)
+        self.webapp.enable_localtests(webapp_data_dir)
 
         conn.request("GET", "/hello_cgi.py")
         response = conn.getresponse()
@@ -93,7 +102,7 @@ class TestWebApp(unittest.TestCase):
         content = response.fp.read()
         self.assertEqual(content, "get_param:  post_param: A posted param")
 
-        webapp.disable_localtests()
+        self.webapp.disable_localtests()
 
         conn.request("GET", "/hello_cgi.py")
         response = conn.getresponse()
@@ -103,7 +112,7 @@ class TestWebApp(unittest.TestCase):
 
     def testHeaders(self):
         conn = httplib.HTTPConnection("localhost", 8888)
-        webapp.enable_localtests(webapp_data_dir)
+        self.webapp.enable_localtests(webapp_data_dir)
 
         conn.request("GET", "/foo.xml")
         response = conn.getresponse()
@@ -124,12 +133,4 @@ class TestWebApp(unittest.TestCase):
         content = response.fp.read()
         self.assertEqual(content, "Test content here\n")
 
-        webapp.disable_localtests()
-
-def setup():
-    global webapp
-    mock_runner = MockRunner()
-    webapp = WebApp(mock_runner)
-
-def teardown():
-    webapp.running = False
+        self.webapp.disable_localtests()

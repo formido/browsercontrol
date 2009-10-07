@@ -836,7 +836,7 @@ class LocalTestsLoader(TestsLoader):
             tests.append(test_obj)
 
         self.runner.webapp.enable_localtests(self.tests_path)
-        self.runner.tests = tests
+        return tests
 
     def cleanup(self):
         self.runner.webapp.disable_localtests()
