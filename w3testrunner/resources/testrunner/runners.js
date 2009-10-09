@@ -255,6 +255,8 @@ var ReftestRunner = Runner.extend({
 
   _screenshotFailure: function(msg, nextStateName) {
     if (this._batch) {
+      // XXX try to recover by asking the server to bring the browser window
+      // to front?
       this._result.status = "error";
       this._result.status_message = msg.message;
       // TODO: save the failing image? (privacy concern if whole desktop screenshot)

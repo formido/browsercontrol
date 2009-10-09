@@ -28,7 +28,7 @@ from webob import Request
 from webob.headerdict import HeaderDict
 
 from w3testrunner.imagecompare import ImageComparator, ImageCompareException
-from w3testrunner.testsloaders import LoaderException
+from w3testrunner.teststores.common import StoreException
 
 log = logging.getLogger(__name__)
 
@@ -51,11 +51,11 @@ class RPC(object):
     def get_state(self):
         return self.runner.get_state()
 
-    def load_tests(self, type, load_info):
+    def load_tests(self, store_info):
         success, message = True, ""
         try:
-            self.runner.load_tests(type, load_info)
-        except LoaderException, e:
+            self.runner.load_tests(store_info)
+        except StoreException, e:
             success, message = False, "Error: %s" % e
 
         return {
@@ -307,7 +307,7 @@ class WebApp(object):
                             cache_max_age=60))
 
         self.rpc = RPC(self)
-        rpcdispatcher = dispatcher.JSONRPCDispatcher(RPC(self))
+        rpcdispatcher = dispatcher.JSONRPCDispatcher(RPC(self), json_impl=json)
         self.rpcapp = wsgi.WSGIJSONRPCApplication({'rpc': rpcdispatcher})
         self.rpcapp = RPCErrorMiddleware(self.rpcapp, self.runner)
 
@@ -328,6 +328,15 @@ class WebApp(object):
                             " the server.")
 
         threading.Thread(target=self._run_server).start()
+
+        for i in range(5):
+            if self._can_connect("http://localhost:%s/" % WEBAPP_PORT):
+                self.runner.ua_string = None
+                return
+            time.sleep(2)
+        else:
+            raise Exception("The server is not listening on port 8888 after "
+                            "startup")
 
     def _can_connect(self, url, verbose=False):
         try:

@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from w3testrunner.testsloaders import LocalTestsLoader
+from w3testrunner.teststores.local import LocalTestStore
 
 local_data_dir = os.path.join(os.path.dirname(__file__), "local_data")
 
@@ -39,9 +39,13 @@ class LocalTestsLoaderTest(unittest.TestCase):
         tests_dir = os.path.join(local_data_dir, "sample_tests_0")
 
         runner = MockRunner()
-        loader = LocalTestsLoader(runner, tests_dir)
+        store_info = {
+            "type": "local",
+            "path": tests_dir,
+        }
+        store = LocalTestStore(runner, store_info)
         self.assertEqual(runner.webapp.tests_path, None)
-        tests = loader.load()
+        tests = store.load()
         self.assertEqual(runner.webapp.tests_path, tests_dir)
 
         expected_tests = [{
@@ -79,5 +83,5 @@ class LocalTestsLoaderTest(unittest.TestCase):
             'url2': None
         }]
         self.assertTestsEquals(tests, expected_tests)
-        loader.cleanup()
+        store.cleanup()
         self.assertEqual(runner.webapp.tests_path, None)

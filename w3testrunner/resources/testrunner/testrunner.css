@@ -122,7 +122,7 @@ body.status-running #framelocator {
 .result-pass {
   background-color: lime;
 }
-.result-error {
+.result-error, .result-crash {
   background-color: black;
   color: white;
 }

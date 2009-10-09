@@ -1,6 +1,10 @@
 import threading
 import unittest
 import time
+try:
+    import simplejson as json
+except ImportError:
+    import json # Python >= 2.6
 
 from lovely.jsonrpc import proxy
 from lovely.jsonrpc.proxy import RemoteException
@@ -11,7 +15,7 @@ from w3testrunner.runner import Runner
 class TestRunner(unittest.TestCase):
     def reset_and_load(self, client, runner):
         client.reset()
-        runner.set_tests([{
+        runner._set_tests([{
             'equal': True,
             'expected': 0,
             'failure_type': '',
@@ -47,7 +51,7 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(runner.status, w3testrunner.runner.NEEDS_TESTS)
         runner.running = True
 
-        client = proxy.ServerProxy('http://localhost:8888/rpc')
+        client = proxy.ServerProxy('http://localhost:8888/rpc', json_impl=json)
         state = client.get_state()
         self.assertEqual({
             u'batch': False,
@@ -86,6 +90,8 @@ class TestRunner(unittest.TestCase):
                           "<unknown_testid>", True)
         self.assertEqual(runner.status, w3testrunner.runner.ERROR)
 
+        # Test that setting a result with a testid that doesn't match the
+        # testid of the test_started() call fails.
         self.reset_and_load(client, runner)
         client.test_started("test_mochi_pass.html")
         self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
@@ -93,18 +99,44 @@ class TestRunner(unittest.TestCase):
                           "<unknown_testid>", {}, True)
         self.assertEqual(runner.status, w3testrunner.runner.ERROR)
 
-        self.reset_and_load(client, runner)
-        client.test_started("test_mochi_pass.html")
-        self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
-        result = {
+        sample_result = {
             "status": "pass",
             "pass_count": 1,
             "fail_count": 0,
             "log": "Some logs",
         }
-        client.set_result("test_mochi_pass.html", result, True)
+
+        # Test that set_result() sets the result.
+        self.reset_and_load(client, runner)
+        client.test_started("test_mochi_pass.html")
+        self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
+        client.set_result("test_mochi_pass.html", sample_result, True)
         actual_result = runner.testid_to_test["test_mochi_pass.html"]["result"]
-        self.assertEqual(actual_result, result)
+        self.assertEqual(actual_result, sample_result)
+
+        # Test that calling set_result with did_start_notify=True when
+        # test_started() wasn't called fails.
+        self.reset_and_load(client, runner)
+        self.assertRaises(RemoteException, client.set_result,
+                          "test_mochi_pass.html", sample_result, True)
+
+        # Test that starting a test with an existing result fails.
+        self.reset_and_load(client, runner)
+        client.test_started("test_mochi_pass.html")
+        client.set_result("test_mochi_pass.html", sample_result, True)
+        self.assertRaises(RemoteException, client.test_started,
+                          "test_mochi_pass.html")
+
+        # Test that clearing a result on a test with no result fails.
+        self.reset_and_load(client, runner)
+        self.assertRaises(RemoteException, client.set_result,
+                          "test_mochi_pass.html", None, False)
+
+        # Test that setting a result on a test with an existing result fails.
+        self.reset_and_load(client, runner)
+        client.set_result("test_mochi_pass.html", sample_result, False)
+        self.assertRaises(RemoteException, client.set_result,
+                          "test_mochi_pass.html", sample_result, False)
 
         # Timeout tests.
         self.reset_and_load(client, runner)
@@ -117,3 +149,6 @@ class TestRunner(unittest.TestCase):
             "status_message": "Timeout detected from server side",
         })
         runner.options.timeout = 0
+
+if __name__ == "__main__":
+    unittest.main()

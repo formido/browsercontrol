@@ -58,7 +58,7 @@ var TestRunner = TR = {
     var ignoreError = false;
     if (this._state && this._state.status == ERROR) {
       if (jQuery.inArray(method, ["reset", "load_tests", "get_state",
-                                  "suspend_timer"]) == -1) {
+                                  "suspend_timer", "set_status"]) == -1) {
         console.info("RPC method " + method + " blocked because of ERROR " +
                      "status");
         return;
@@ -174,7 +174,11 @@ var TestRunner = TR = {
       $("#loadTestsError").hide().text("");
       var testsPath = $("#testsPath").val();
 
-      TR.rpc("load_tests", ["local", testsPath], function(msg) {
+      var storeInfo = {
+        name: "local",
+        path: testsPath
+      };
+      TR.rpc("load_tests", [storeInfo], function(msg) {
         LOG("Got results " + msg);
         if (msg.success) {
           $("#loadTestsBox").hide();
@@ -232,7 +236,7 @@ var TestRunner = TR = {
     if (status == ERROR)
       this.stopTests();
 
-    if (!fromServer && status != ERROR && oldStatus != status) {
+    if (!fromServer && oldStatus != status) {
       this.rpc("set_status", [status, message], null, true);
     }
     TR.updateUI();
@@ -354,9 +358,8 @@ var TestRunner = TR = {
   },
 
   updateTestStatus: function(test) {
-
-    // Using getElementById because the test identifier contains slashes
-    // which are interpreted by jQuery.
+    // Using getElementById because the test identifier contains slashes which
+    // are interpreted by jQuery.
     var row = document.getElementById("testid-" + test.id);
     var statusCell = $(row).find("td.status");
 

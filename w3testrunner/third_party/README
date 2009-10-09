@@ -1,0 +1,9 @@
+talos:
+  From the Talos project:
+
+  http://hg.mozilla.org/mozilla-central/raw-file/bec75aa6c73a/testing/performance/talos/ffprocess.py
+  http://hg.mozilla.org/mozilla-central/raw-file/bec75aa6c73a/testing/performance/talos/ffprocess_linux.py
+  http://hg.mozilla.org/mozilla-central/raw-file/bec75aa6c73a/testing/performance/talos/ffprocess_mac.py
+  http://hg.mozilla.org/mozilla-central/raw-file/bec75aa6c73a/testing/performance/talos/ffprocess_win32.py
+
+  Some modifications have been made, tagged with "BT:"

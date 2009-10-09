@@ -1,15 +1,15 @@
 from __future__ import with_statement
+import hashlib
+import itertools
+import logging
 import os.path
 from os.path import join
-import sys
-import logging
 import re
-import urlparse
-import hashlib
+import sys
 import time
-import itertools
+import urlparse
 
-from w3testrunner.testsloaders import TestsLoader, LoaderException
+from w3testrunner.teststores.common import TestStore, StoreException
 
 log = logging.getLogger(__name__)
 
@@ -801,18 +801,18 @@ class TestsExtractor(object):
     def get_imported_tests(self, directory):
         return self.get_imported_tests_and_resources(directory)[0]
 
-class LocalTestsLoader(TestsLoader):
-    type = "local"
+class LocalTestStore(TestStore):
+    name = "local"
 
-    def __init__(self, runner, load_info):
-        super(LocalTestsLoader, self).__init__(runner, load_info)
-        self.tests_path = load_info
+    def __init__(self, runner, store_info):
+        super(LocalTestStore, self).__init__(runner, store_info)
+        self.tests_path = store_info["path"]
         # tests_path shouldn't contain a trailing slash.
         self.tests_path = self.tests_path.strip().rstrip("\\/")
 
     def load(self):
         if not os.path.exists(self.tests_path):
-            raise LoaderException("Tests path '%s' does not exist" %
+            raise StoreException("Tests path '%s' does not exist" %
                                    self.tests_path)
 
         testsextractor = TestsExtractor(tests_dir=self.tests_path)
@@ -841,13 +841,28 @@ class LocalTestsLoader(TestsLoader):
     def cleanup(self):
         self.runner.webapp.disable_localtests()
 
-    @classmethod
-    def add_options(cls, parser):
-        parser.add_option('--tests-path',
-            help='Path to the tests to load')
+    def save(self):
+        log.info("Test results:")
+        statuses = []
+        for t in self.runner.tests:
+            status = "not-run"
+            if "result" in t:
+                status = t["result"]["status"]
+            log.info("Test: %s, result: %s", t["id"], status)
+            statuses.append(status)
+        for k, g in itertools.groupby(sorted(statuses)):
+            log.info("    %s: %s", k, len(list(g)))
 
     @classmethod
-    def maybe_load_tests(cls, runner):
-        if runner.options.tests_path:
-            return runner.options.tests_path
-        return None
+    def add_options(cls, parser):
+        parser.add_option("--tests-path",
+            help="Path to the tests to load")
+
+    @classmethod
+    def options_to_store_info(cls, options):
+        if not options.tests_path:
+            return None
+        return {
+            "name": "local",
+            "path": options.tests_path,
+        }

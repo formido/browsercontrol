@@ -1,3 +1,5 @@
+from __future__ import with_statement
+
 import optparse
 import os
 import logging
@@ -8,27 +10,44 @@ import time
 import traceback
 
 from w3testrunner.webapp import WebApp
-from w3testrunner import testsloaders
-from w3testrunner.testsloaders import LoaderException
+from w3testrunner import teststores
+from w3testrunner.browsers.browser import BrowserInfo, BrowserException
+from w3testrunner.browsers.manager import browsers_manager
 
 log = logging.getLogger(__name__)
 
 NEEDS_TESTS, RUNNING, FINISHED, STOPPED, ERROR = range(5)
 
+# from http://code.activestate.com/recipes/465057/
+def synchronized(lock):
+    """ Synchronization decorator. """
+
+    def wrap(f):
+        def newFunction(*args, **kw):
+            lock.acquire()
+            try:
+                return f(*args, **kw)
+            finally:
+                lock.release()
+        return newFunction
+    return wrap
+
+runner_lock = threading.RLock()
+
 class Runner(object):
     def __init__(self, options, start_loop=True):
         self.options = options
         self.running = False
-        self.last_loader = None
+        self.last_test_store = None
         self.running_test = None
         self.hang_timer = None
         self.last_hung_testid = None
         self.webapp = WebApp(self)
         self.start_loop = start_loop
+        self.batch = False
+        self.browser = None
+        self.tests_finished_event = threading.Event()
         self.reset()
-        # Batch mode is active if there's a browser to control.
-        self.batch = bool(self.options.browser)
-        log.debug("Batch mode: %s", self.batch)
 
         # Guard in an exception handler so that the webapp can shutdown if
         # there's an exception raised in _post_init().
@@ -38,20 +57,33 @@ class Runner(object):
             traceback.print_exc()
 
     def _post_init(self):
-        load_infos = []
-        for loader_class in testsloaders.LOADERS:
-            load_info = loader_class.maybe_load_tests(self)
-            if load_info:
-                load_infos.append((loader_class.type, load_info))
-        if len(load_infos) > 1:
-            raise Exception("More than one loader wants to load tests.\n"
-                            "There may be some conflicting command line "
-                            "parameters")
-        if len(load_infos) == 1:
-            self.load_tests(*load_infos[0])
+        if self.options.browser:
+            # Batch mode is active if there's a browser to control.
+            self.batch = True
 
-        threading.Thread(target=self.main_loop).start()
-        if not self.batch:
+            name = path = None
+            if len(os.path.split(self.options.browser)) > 1:
+                name = self.options.browser
+            else:
+                path = self.options.browser
+
+            browser_info = BrowserInfo(name=name, path=path)
+            self.browser = browsers_manager.find_browser(browser_info)
+            log.info("Using browser: %s", self.browser)
+
+        store_info = self._options_to_store_info(self.options)
+
+        if self.batch:
+            if not store_info:
+                raise Exception("No tests to load. You should specify options "
+                                "for test loading such as --tests-path or "
+                                "--username and --token")
+            self.test_store = self._create_store(store_info)
+            threading.Thread(target=self._main_loop).start()
+        else:
+            if store_info:
+                self.load_tests(store_info)
+
             log.info("The runner is started. You should now point your "
                      "browser to http://localhost:8888/")
 
@@ -69,24 +101,80 @@ class Runner(object):
             sys.exit()
         log.info("End of main()")
 
-    def main_loop(self):
+    def _options_to_store_info(self, options):
+        store_infos = []
+        for store_class in teststores.STORES:
+            store_info = store_class.options_to_store_info(self.options)
+            if store_info:
+                store_infos.append(store_info)
+        if len(store_infos) > 1:
+            raise Exception("More than one store found for the specified "
+                            "command line options.\n"
+                            "There may be some conflicting parameters.")
+        if len(store_infos) == 1:
+            return store_infos[0]
+        return None
+
+    def _create_store(self, store_info):
+        name = store_info["name"]
+        store_classes = [sc for sc in teststores.STORES if sc.name == name]
+        if len(store_classes) == 0:
+            raise Exception("Can't find a store for name %s" % name)
+
+        assert len(store_classes) == 1, "Duplicate stores?"
+        return store_classes[0](self, store_info)
+
+    def _main_loop(self):
         log.debug("in main_loop %s", self)
 
-        # TODO:
-        # if batch: check that there's a tests loader and results saver. Error otherwise.
-        event = threading.Event()
+        self.browser.terminate()
 
         while True:
-            log.debug("Waiting...")
-            event.wait()
-            log.debug("...Finished waiting")
+            log.info("Loading tests...")
+            with runner_lock:
+                found_tests = self._do_load_tests()
+                if not found_tests:
+                    # TODO: wait a moment and try again to find tests?
+                    log.info("No tests found, terminating")
+                    break
 
-        # TODO:
-        # command line argument: load the tests to run
-        # start browser if there's one (or use a dummy one if none to have only one code path)
-        # Run all the tests (i.e. wait for the browser to have consumed all the tests)
-        # If results_saver is available: save results
-        # if loop mode: go to start of loop.
+                if not self.browser.is_alive():
+                    # TODO: catch exception and abort tests.
+                    self.browser.launch()
+
+            log.debug("Waiting for tests to finish...")
+            self.tests_finished_event.wait()
+            self.tests_finished_event.clear()
+            log.debug("...Finished waiting for end of tests")
+
+            with runner_lock:
+                self.test_store.save()
+            if self.status == ERROR:
+                log.error("\n\nError encountered while running tests, "
+                          "terminating.\n Status message: %s\n\n",
+                          self.status_message)
+                break
+
+            self.reset()
+            if self.test_store.load_once:
+                break
+
+        self.browser.terminate()
+        self.running = False
+        self.webapp.running = False
+
+    def _set_tests(self, tests):
+        self.tests = tests
+        self.testid_to_test = dict([(test["id"], test) for test in self.tests])
+        self.finished_tests_count = 0
+        self.status = STOPPED
+
+    def _do_load_tests(self):
+        tests = self.test_store.load()
+        self.last_test_store = self.test_store
+
+        self._set_tests(tests)
+        return len(tests) > 0
 
     def _stop_hang_timer(self):
         if not self.hang_timer:
@@ -94,6 +182,49 @@ class Runner(object):
         self.hang_timer.cancel()
         self.hang_timer = None
         self.last_hung_testid = None
+
+    @synchronized(runner_lock)
+    def reset(self):
+        self._stop_hang_timer()
+        self.status = NEEDS_TESTS
+        self.status_message = ""
+        self.ua_string = None
+        self.testid_to_test = {}
+        if self.last_test_store:
+            self.last_test_store.cleanup()
+            self.last_test_store = None
+
+        self.tests = []
+
+    @synchronized(runner_lock)
+    def clear_results(self):
+        for test in self.tests:
+            if "result" in test:
+                del test["result"]
+
+    @synchronized(runner_lock)
+    def get_state(self):
+        """Return a JSONifiable object representing the Runner state."""
+        state = {
+            "status": self.status,
+            "status_message": self.status_message,
+            "ua_string": self.ua_string,
+            "batch": self.batch,
+            "timeout": self.options.timeout,
+        }
+        state["tests"] = self.tests
+        return state
+
+    @synchronized(runner_lock)
+    def load_tests(self, store_info):
+        log.info("Loading tests using store_info: %s", store_info)
+        self.reset()
+
+        self.test_store = self._create_store(store_info)
+        if not self.test_store:
+            raise Exception("Can't find a store for store_info %s", store_info)
+
+        self._do_load_tests()
 
     def _hang_timer_callback(self):
         self.hang_timer = None
@@ -108,70 +239,28 @@ class Runner(object):
                  self.running_test["id"])
         self.last_hung_testid = self.running_test["id"]
 
+        status = "timeout"
+        status_message = "Timeout detected from server side"
+
+        crashed = False
+        if self.browser and not self.browser.is_alive():
+            log.debug("Detected browser crash")
+            crashed = True
+            status = "crash"
+            status_message = "Browser crash detected from server side"
+
         self.set_result(self.running_test["id"], {
-            "status": "timeout",
-            "status_message": "Timeout detected from server side",
+            "status": status,
+            "status_message": status_message,
         }, True)
         self.running_test = None
 
-        # TODO if not batch mode, restart browser.
+        if crashed:
+            log.debug("Restarting browser")
+            # TODO: catch exception and abort tests.
+            self.browser.launch()
 
-    # Methods called from RPC:
-
-    def reset(self):
-        # TODO: reset other state?
-        self._stop_hang_timer()
-        self.status = NEEDS_TESTS
-        self.status_message = ""
-        self.ua_string = None
-        self.testid_to_test = {}
-        if self.last_loader:
-            self.last_loader.cleanup()
-            self.last_loader = None
-
-        self.tests = []
-
-    def clear_results(self):
-        for test in self.tests:
-            if "result" in test:
-                del test["result"]
-
-    def get_state(self):
-        """Return a JSONifiable object representing the Runner state."""
-        state = {
-            "status": self.status,
-            "status_message": self.status_message,
-            "ua_string": self.ua_string,
-            "batch": self.batch,
-            "timeout": self.options.timeout,
-        }
-        # TODO: filter props on tests?
-        state["tests"] = self.tests
-        return state
-
-    def load_tests(self, type, load_info):
-        log.info("Loading tests using type: %s load_info: %s", type, load_info)
-        self.reset()
-
-        loader_classes = [lc for lc in testsloaders.LOADERS if lc.type == type]
-        if len(loader_classes) == 0:
-            raise Exception("Can't find a loader for type %s", type)
-
-        assert len(loader_classes) == 1, "Duplicate loaders?"
-
-        loader = loader_classes[0](self, load_info)
-        tests = loader.load()
-        self.last_loader = loader
-        if not tests:
-            raise LoaderException("Couldn't load any tests")
-
-        self.set_tests(tests)
-
-    def set_tests(self, tests):
-        self.tests = tests
-        self.testid_to_test = dict([(test["id"], test) for test in self.tests])
-        self.status = STOPPED
-
+    @synchronized(runner_lock)
     def set_status(self, status, message):
         if self.status == ERROR and status == ERROR:
             log.warn("Setting ERROR state twice. The message is ignored")
@@ -187,16 +276,21 @@ class Runner(object):
 
         if status == ERROR:
             self._stop_hang_timer()
-            # TODO: maybe upload results if in batch mode?
+            self.tests_finished_event.set()
 
     def _get_test(self, testid):
         if not testid in self.testid_to_test:
             raise Exception("Test with identifier %s not found" % testid)
         return self.testid_to_test[testid]
 
+    @synchronized(runner_lock)
     def test_started(self, testid):
         log.info("Test %s started", testid)
         test = self._get_test(testid)
+        if "result" in test:
+            raise Exception("Starting a test which already has a result "
+                            "(test id: %s, existing result: %s)" % (
+                            testid, test["result"]))
         self.running_test = test
 
         if self.options.timeout <= 0:
@@ -220,6 +314,7 @@ class Runner(object):
                             "test id (old: %s, new: %s)" %
                             (self.running_test["id"], testid))
 
+    @synchronized(runner_lock)
     def suspend_timer(self, testid, suspended):
         log.debug("suspend_timer testid: %s, suspended: %s", testid, suspended)
         test = self._get_test(testid)
@@ -230,6 +325,7 @@ class Runner(object):
         else:
             self.test_started(testid)
 
+    @synchronized(runner_lock)
     def set_result(self, testid, result, did_start_notify):
         log.info("Saving result for testid: %s", testid)
 
@@ -251,17 +347,28 @@ class Runner(object):
         self.running_test = None
 
         if not result:
+            if not "result" in test:
+                raise Exception("Test with id %s has no result to clear" %
+                                testid)
+            del test["result"]
+            self.finished_tests_count -= 1
+        else:
             if "result" in test:
-                del test["result"]
-            return
+                raise Exception("Overwriting an existing result for test id %s" %
+                                testid)
+            test["result"] = result
+            self.finished_tests_count += 1
 
-        test["result"] = result
+        if self.finished_tests_count == len(self.tests):
+            log.info("All tests finished")
+            self.tests_finished_event.set()
 
 def main():
     parser = optparse.OptionParser(
         usage='%prog [OPTIONS]')
     parser.add_option('--browser',
-        help='Name or path to the browser to use for running the tests (NOT YET IMPLEMENTED)')
+        help="Name or absolute path to the browser to use for running the "
+             "tests")
     parser.add_option("--nouacheck",
         action="store_true", default=False,
         help="Disable the same user agent check. Only use when debugging."),
@@ -272,8 +379,8 @@ def main():
     parser.add_option("--debug",
         action="store_true", default=False,
         help="Debug mode"),
-    for loader_class in testsloaders.LOADERS:
-        loader_class.add_options(parser)
+    for store_class in teststores.STORES:
+        store_class.add_options(parser)
 
     options, args = parser.parse_args()
     if len(args) != 0:
