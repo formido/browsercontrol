@@ -11,7 +11,11 @@ if sys.platform == "win32":
     from win32com.shell import shell
 
 class SafariWin(SafariMixin, BrowserWin):
-    def reset_state(self):
+    executable = "Safari.exe"
+
+    def prepare_launch(self):
+        super(SafariWin, self).prepare_launch()
+
         # delete browser cache
         appdata = shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, 0, 0)
         def delete_if_exists(path):

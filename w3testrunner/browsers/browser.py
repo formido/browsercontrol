@@ -2,8 +2,10 @@ from __future__ import with_statement
 import logging
 import os
 import random
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 try:
@@ -61,6 +63,11 @@ class Browser(object):
     nopath = False
     # Command to launch the browser. Filled automatially if None.
     cmd = None
+    # Set to True if this browser needs a temporary profile directory when
+    # launched.
+    # If True, a temporary directory will be created in prepare_launch() that
+    # is stored in self.profile_dir.
+    needs_temporary_profile_dir = False
 
     proc = None
     screen = None
@@ -75,8 +82,12 @@ class Browser(object):
         self.executable = attrs.executable
 
     @classmethod
+    def _fixup_executable_name(cls, executable):
+        return executable
+
+    @classmethod
     def _compute_attributes(cls):
-        """A few class method need access to some attributes that are computed
+        """A few class methods need access to some attributes that are computed
         dynamically. This method returns an object with such attributes."""
         class Attrs(object):
             name = cls.name
@@ -90,6 +101,7 @@ class Browser(object):
             attrs.directory = attrs.name
         if not attrs.executable:
             attrs.executable = attrs.name
+        attrs.executable = cls._fixup_executable_name(attrs.executable)
         return attrs
 
     @classmethod
@@ -117,7 +129,7 @@ class Browser(object):
     def launch(self):
         self.terminate()
         assert not self.is_alive(), "Didn't terminate correctly"
-        self.reset_state()
+        self.prepare_launch()
 
         if not self.cmd:
             self.cmd = [self.browser_info.path]
@@ -182,12 +194,32 @@ class Browser(object):
 
         ffprocess.TerminateAllProcesses(*self.CRASH_REPORTER_PROCESSES)
 
-    def reset_state(self):
+    def _create_temp_profile_dir(self):
+        """Create a temporary directory for the browser profile.
+
+        The empty directory created is stored in self.profile_dir.
         """
-        Override this to reset the browser profile or clean stuff before a new
-        launch.
-        """
+        self.profile_dir = os.path.join(tempfile.gettempdir(),
+                                        "testrunner_profile_%s" % self.name)
+        if os.path.exists(self.profile_dir):
+            shutil.rmtree(self.profile_dir)
+        os.makedirs(self.profile_dir)
+
+    def initialize_profile(self):
+        """Override to initialize the profile directory in self.profile_dir."""
         pass
+
+    def prepare_launch(self):
+        """Prepare state before launching the browser.
+
+        The browser is not running at this stage, so it should be safe to
+        modify files in the browser profile directory if needed.
+
+        The parent should be called if overridden.
+        """
+        if self.needs_temporary_profile_dir:
+            self._create_temp_profile_dir()
+            self.initialize_profile()
 
     def is_alive(self):
         alive = ffprocess.ProcessesWithNameExist(self.process_name)
@@ -204,6 +236,7 @@ class Browser(object):
     def terminate(self):
         if not self.process_name:
             raise BrowserException("No process_name defined")
+
         log.debug("Terminating process: '%s'", self.process_name)
         ffprocess.TerminateAllProcesses(self.process_name)
         # Crash reporter processes could still have some browser files opened
@@ -214,6 +247,20 @@ class Browser(object):
             log.debug("Waiting for process to terminate...")
             self.proc.wait()
             log.debug("...done")
+
+    def cleanup(self):
+        """Free all resources allocated for running the browser.
+
+        Consumers must call this method when they have finished using this
+        browser.
+        """
+        if self.is_alive():
+            self.terminate()
+        assert not self.is_alive(), "Didn't terminate correctly"
+
+        if self.profile_dir:
+            log.debug("Removing temporary profile %r", self.profile_dir)
+            shutil.rmtree(self.profile_dir)
 
 if sys.platform == "win32":
     import win32ui, win32gui, win32con, win32process, win32api, pywintypes
@@ -227,23 +274,23 @@ class BrowserWin(Browser):
     def __init__(self, browser_info):
         super(BrowserWin, self).__init__(browser_info)
 
-        if not self.executable.endswith(".exe"):
-            self.executable += ".exe"
-
         if not self.cmd:
             self.cmd = [self.browser_info.path]
 
     @classmethod
+    def _fixup_executable_name(cls, executable):
+        if executable and not executable.endswith(".exe"):
+            executable += ".exe"
+        return executable
+
+    @classmethod
     def discover_path(cls, browser_info):
         attrs = cls._compute_attributes()
-
         executable = attrs.executable
-        if not executable.endswith(".exe"):
-            executable += ".exe"
 
         default_path = os.path.join(os.environ["ProgramFiles"], attrs.directory,
                                     executable)
-        print "Default path", default_path
+        log.debug("checking default path: %s", default_path)
         if not os.path.isfile(default_path):
             return None
         return default_path
@@ -260,11 +307,30 @@ class BrowserWin(Browser):
         return pids
 
     def _get_windows_by_pids(self, pids):
-        windows = []
-        win32gui.EnumWindows(lambda win, windows: windows.append(win), windows)
+        all_windows = []
+        win32gui.EnumWindows(lambda win, all_windows: all_windows.append(win),
+                             all_windows)
 
-        return [w for w in windows if win32gui.IsWindowVisible(w) and
-                win32process.GetWindowThreadProcessId(w)[1] in pids]
+        windows = set()
+        for win in all_windows:
+            if (not win32gui.IsWindowVisible(win) or
+                not win32process.GetWindowThreadProcessId(win)[1] in pids):
+                continue
+
+            # FIXME: this will find the top-level browser window for javascript
+            # alert() popup windows (for instance). This means we won't be able
+            # to detect when a popup window is opened.
+            parent = win32gui.GetParent(win)
+            while True:
+                if not parent:
+                    break
+                log.debug("Found parent window 0x%x for 0x%x", parent, win)
+                win = parent
+                parent = win32gui.GetParent(win)
+            log.debug("Found window 0x%x", win)
+            windows.add(win)
+
+        return windows
 
     def _maximize_and_move_front(self):
         pids = self._get_pids(self.process_name)
@@ -276,7 +342,7 @@ class BrowserWin(Browser):
         for i in range(tries):
             windows = self._get_windows_by_pids(pids)
             if len(windows) == 1:
-                w = windows[0]
+                w = windows.pop()
                 break
             # XXX Sometimes more that one window is found during startup.
             # Not sure what happens. Just retry until there is only one.
@@ -295,7 +361,7 @@ class BrowserWin(Browser):
             raise BrowserException("Couldn't find browser window for pids %s" %
                                    pids)
 
-        log.debug("Found window handle %i", w)
+        log.debug("Found window handle 0x%x", w)
         win32gui.ShowWindow(w, win32con.SW_MAXIMIZE)
         # If the window running this script has not the focus, the target window
         # can't be set to foreground.

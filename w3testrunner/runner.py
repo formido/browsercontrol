@@ -139,7 +139,7 @@ class Runner(object):
                     break
 
                 if not self.browser.is_alive():
-                    # TODO: catch exception and abort tests.
+                    # TODO: catch exception and abort tests if we get one.
                     self.browser.launch()
 
             log.debug("Waiting for tests to finish...")
@@ -159,7 +159,7 @@ class Runner(object):
             if self.test_store.load_once:
                 break
 
-        self.browser.terminate()
+        self.browser.shutdown()
         self.running = False
         self.webapp.running = False
 

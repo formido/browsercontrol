@@ -92,10 +92,11 @@ def post_install():
     if not has_pil:
         if platform == "win":
             # PIL fails to install on Windows. It should be installed manually.
-            log.info("You should install PIL from http://www.pythonware.com/products/pil/")
+            print("You should install PIL from "
+                  "http://www.pythonware.com/products/pil/")
         else:
-            sh("%s --find-links http://www.pythonware.com/products/pil/ Imaging" %
-               easy_install)
+            sh("%s --find-links http://www.pythonware.com/products/pil/ "
+               "Imaging" % easy_install)
 
 @task
 @needs(['paver.virtual.bootstrap'])
@@ -105,7 +106,8 @@ def bootstrap():
        by an elevation attempt."""
     lines = open("bootstrap.py").readlines()
     try:
-        after_install_line = lines.index("""def after_install(options, home_dir):\n""")
+        after_install_line = lines.index(
+            """def after_install(options, home_dir):\n""")
         insert_after_line = lines.index(
             """        bin_dir = join(home_dir, 'Scripts')\n""",
             after_install_line)
