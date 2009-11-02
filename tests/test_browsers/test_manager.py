@@ -73,7 +73,7 @@ class BrowsersManagerTest(unittest.TestCase):
 
         browsers_manager.browser_classes = old_browser_classes
 
-    def test_find_browser_real(self):
+    def test_find_browser_system(self):
         browser_checks = [
             # Windows
             {

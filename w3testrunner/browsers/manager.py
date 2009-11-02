@@ -23,7 +23,9 @@ class BrowsersManager(object):
                 __import__(modulename)
             module = sys.modules[modulename]
             classes.extend([c for c in module.__dict__.itervalues() if
-                            isinstance(c, type) and issubclass(c, Browser)])
+                            isinstance(c, type) and
+                            issubclass(c, Browser) and
+                            c.name != None])
         return classes
 
     def find_browser(self, browser_info):
