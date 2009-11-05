@@ -29,6 +29,8 @@ class SafariWin(SafariMixin, BrowserWin):
 
 class SafariMac(SafariMixin, BrowserMac):
     process_name = "Safari"
+    directory = "Safari"
+    executable = "Safari"
 
     def __init__(self, browser_info):
         super(SafariMac, self).__init__(browser_info)

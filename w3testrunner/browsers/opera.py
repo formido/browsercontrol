@@ -66,10 +66,12 @@ class OperaLin(OperaMixin, BrowserLin):
 
 class OperaMac(OperaMixin, BrowserMac):
     process_name = "Opera"
+    directory = "Opera"
+    executable = "Opera"
 
-    def __init__(self, url, ua, browsers_base_dir=""):
-        super(OperaMac, self).__init__(url, ua, browsers_base_dir)
-        self.cmd = ["open", "-a", self.get_browser_path()]
+    def __init__(self, browser_info):
+        super(OperaMac, self).__init__(browser_info)
+        self.cmd = ["open", "-a", browser_info.path]
 
         self.profile_path = os.path.expanduser(
                                 "~/Library/Preferences/Opera Preferences")

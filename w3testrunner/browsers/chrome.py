@@ -58,5 +58,7 @@ class ChromeLin(ChromeMixin, BrowserLin):
 
 
 class ChromeMac(ChromeMixin, BrowserMac):
-    # TODO
-    pass
+    # TODO: what about the "Google Chrome Helper" process?
+    process_name = "Google Chrome"
+    directory = "Google Chrome"
+    executable = "Google Chrome"

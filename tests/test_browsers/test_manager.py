@@ -121,12 +121,12 @@ class BrowsersManagerTest(unittest.TestCase):
             # Mac
             {
                 "name": "firefox",
-                "path": "/Applications/Firefox.app/Contents/MacOS/firefox",
+                "path": "/Applications/Firefox.app/Contents/MacOS/firefox-bin",
                 "class": w3testrunner.browsers.firefox.FirefoxMac,
             },
             {
                 "name": "opera",
-                "path": "/Applications/Opera.app/Contents/MacOS/opera",
+                "path": "/Applications/Opera.app/Contents/MacOS/Opera",
                 "class": w3testrunner.browsers.opera.OperaMac,
             },
             {

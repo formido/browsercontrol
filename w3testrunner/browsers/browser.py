@@ -286,10 +286,9 @@ class BrowserWin(Browser):
     @classmethod
     def discover_path(cls, browser_info):
         attrs = cls._compute_attributes()
-        executable = attrs.executable
 
         default_path = os.path.join(os.environ["ProgramFiles"], attrs.directory,
-                                    executable)
+                                    attrs.executable)
         log.debug("checking default path: %s", default_path)
         if not os.path.isfile(default_path):
             return None
@@ -446,6 +445,18 @@ class BrowserMac(Browser):
         frame = mainscreen.visibleFrame()
         self.desktopsize = (frame.size.width, frame.size.height)
         log.debug("Found Desktop size: (%s,%s) "  % self.desktopsize)
+
+    @classmethod
+    def discover_path(cls, browser_info):
+        attrs = cls._compute_attributes()
+        executable = attrs.executable
+
+        default_path = os.path.join("/Applications", attrs.directory + ".app",
+                                    "Contents", "MacOS", attrs.executable)
+        log.debug("checking default path: %s", default_path)
+        if not os.path.isfile(default_path):
+            return None
+        return default_path
 
     def _maximize_and_move_front(self):
         process = self.sysevents.processes[self.process_name]

@@ -38,9 +38,8 @@ except ImportError:
     # Python < 2.6
     install_requires.append("simplejson")
 
-# TODO: enable this requirement once browser launching is added.
-#if platform == "mac":
-#    install_requires.append('appscript')
+if platform == "mac":
+    install_requires.append('appscript')
 
 options(
     setup=Bunch(

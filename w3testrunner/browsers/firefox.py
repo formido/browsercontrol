@@ -5,7 +5,6 @@ from w3testrunner.browsers.browser import BrowserLin, BrowserWin, BrowserMac
 class FirefoxMixin(object):
     name = "firefox"
     needs_temporary_profile_dir = True
-    process_name = "firefox"
 
     def initialize_profile(self):
         """Sets up the standard testing profile.
@@ -75,7 +74,6 @@ class FirefoxWin(FirefoxMixin, BrowserWin):
 
 
 class FirefoxLin(FirefoxMixin, BrowserLin):
-    executable = "firefox"
     appname = "Firefox"
 
     def __init__(self, browser_info):
@@ -93,4 +91,6 @@ class FirefoxLin(FirefoxMixin, BrowserLin):
 
 class FirefoxMac(FirefoxMixin, BrowserMac):
     process_name = "firefox-bin"
-    # TODO
+    directory = "Firefox"
+    executable = "firefox-bin"
+
