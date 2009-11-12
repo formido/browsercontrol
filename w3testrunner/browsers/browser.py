@@ -74,6 +74,7 @@ class Browser(object):
 
     def __init__(self, browser_info):
         self.browser_info = browser_info
+        self.profile_dir = None
 
         assert self.name
         attrs = self._compute_attributes()

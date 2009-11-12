@@ -2,12 +2,19 @@ import BaseHTTPServer
 import Queue
 import logging
 import os
+import sys
 import threading
 import unittest
 import urllib2
 
-from w3testrunner.browsers.browser import BrowserInfo, Browser, BrowserException
+from w3testrunner.browsers.browser import Browser, BrowserInfo
 from w3testrunner.browsers.manager import browsers_manager
+
+try:
+    import utils
+except ImportError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
+    import utils
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +36,7 @@ class HTTPHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         pass
 
 
-if True:
-  class BrowserTest(unittest.TestCase):
+class BrowserTest(unittest.TestCase):
     def _do_test_browser(self, browser):
         browser.terminate()
         self.assertFalse(browser.is_alive())
@@ -42,41 +48,31 @@ if True:
 
         browser.terminate()
         self.assertFalse(browser.is_alive())
+        browser.cleanup()
+
         self.assertEquals(self.httpd.request_count, 1)
         self.httpd.request_count = 0
 
-    def _get_browser_names(self):
-        # Testing a system browser will kill the browser process if one is
-        # already running.
-        # Additionally, testing all system browsers can be slow.
-        # That's why they will only be tested if an environment variable is set.
-        if not "BT_TEST_SYSTEM_BROWSERS" in os.environ:
-            log.info("Only testing dummy browser because the "
-                     "BT_TEST_SYSTEM_BROWSERS environment variable is not set")
-            return set(["dummy"])
-
-        return set(bc.name for bc in browsers_manager.browser_classes)
-
     def _run_httpd(self):
-        """Run a HTTP server that saves requests to self.requests."""
+        """Run a HTTP server that counts requests to self.request_count."""
         self.httpd_running = True
         server_address = ('', RUNNER_PORT)
         self.httpd = BaseHTTPServer.HTTPServer(server_address, HTTPHandler)
         self.httpd.request_count = 0
-        self.httpd_ready.set()
+        self.httpd_ready_event.set()
         while self.httpd_running:
             self.httpd.handle_request()
-        self.shutdown_complete.set()
+        self.shutdown_complete_event.set()
 
     def setUp(self):
         self.OLD_RUNNER_URL = Browser.RUNNER_URL
         Browser.RUNNER_URL = RUNNER_URL
-        self.httpd_ready = threading.Event()
+        self.httpd_ready_event = threading.Event()
         threading.Thread(target=self._run_httpd).start()
-        self.httpd_ready.wait()
+        self.httpd_ready_event.wait()
 
     def tearDown(self):
-        self.shutdown_complete = threading.Event()
+        self.shutdown_complete_event = threading.Event()
         self.httpd_running = False
 
         # Dummy request to shut down the server.
@@ -85,19 +81,15 @@ if True:
         except urllib2.URLError, e:
             pass
 
-        self.shutdown_complete.wait()
+        self.shutdown_complete_event.wait()
         Browser.RUNNER_URL = self.OLD_RUNNER_URL
 
     def test_browsers(self):
-        for browser_name in self._get_browser_names():
+        for browser_name in utils.browser_names_to_test():
             log.info("**** Testing browser %s", browser_name)
             browser_info = BrowserInfo(name=browser_name)
-            try:
-                browser = browsers_manager.find_browser(browser_info)
-            except BrowserException, e:
-                log.info("Couldn't find browser %r (%s) skipping",
-                         browser_name, e)
-                continue
+            browser = browsers_manager.find_browser(
+                BrowserInfo(name=browser_name))
             self._do_test_browser(browser)
 
 

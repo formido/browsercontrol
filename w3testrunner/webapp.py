@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import urllib2
+import urlparse
 try:
     import simplejson as json
 except ImportError:
@@ -20,6 +21,7 @@ except ImportError:
 
 from lovely.jsonrpc import dispatcher, wsgi
 from paste.urlparser import StaticURLParser
+from paste.proxy import TransparentProxy
 from paste.httpserver import WSGIHandler
 from paste.cgiapp import CGIApplication, CGIWriter, StdinReader, \
                          proc_communicate
@@ -32,6 +34,7 @@ from w3testrunner.teststores.common import StoreException
 
 log = logging.getLogger(__name__)
 
+WEBAPP_HOST = "localhost"
 WEBAPP_PORT = 8888
 
 class RPC(object):
@@ -142,7 +145,7 @@ class RPCErrorMiddleware(object):
             ALLOWED_ERROR_METHODS = ("reset", "load_tests", "get_state",
                                      "suspend_timer")
             if not input_json["method"] in ALLOWED_ERROR_METHODS:
-                start_response('200 OK', [('Content-Type', 'application/json')])
+                start_response("200 OK", [("Content-Type", "application/json")])
                 return json.dumps({
                     "result": None,
                     "error": {
@@ -292,8 +295,66 @@ class PythonCGIApplication(CGIApplication):
             start_response(writer.status, writer.headers)
         return []
 
+class ProxyRemappingMiddleware(object):
+    def __init__(self, application, paths_mappings):
+        self.application = application
+        self.paths_mappings = paths_mappings
 
-class WebApp(object):
+    def __call__(self, environ, start_response):
+        path_info = environ["PATH_INFO"]
+        for source_path, target_path in self.paths_mappings:
+            if not path_info.startswith(source_path):
+                continue
+            environ["PATH_INFO"] = path_info.replace(source_path,
+                                                     target_path, 1)
+            log.debug("Found mapping %s => %s", source_path, target_path)
+            return self.application(environ, start_response)
+
+        start_response("404 Not found", [("Content-type", "text/plain")])
+        return "Not found"
+
+class PortCheckerMixin(object):
+    server_host = "localhost"
+    server_port = -1
+
+    def _can_connect(self, path, verbose=False):
+        assert self.server_port > 0, "self.server_port must be set"
+
+        url = "http://%s:%s%s" % (self.server_host, self.server_port, path)
+        try:
+            # XXX timeout is 2.6 only
+            urllib2.urlopen(url, timeout=5).read()
+        # XXX see why getting BadStatusLine sometimes.
+        except (urllib2.URLError, httplib.BadStatusLine):
+            e = sys.exc_info()[1]
+            log.debug("Exception in _can_connect: %s", e)
+            if isinstance(e, urllib2.HTTPError):
+                return True
+            # with 2.6 e.reason.errno can be used instead of e.reason.args[0]
+            if e.reason.args[0] == errno.ECONNREFUSED:
+                return False
+        return True
+
+    def check_free_port(self):
+        for i in range(5):
+            if not self._can_connect("/stop"):
+                break
+            log.info("Server already running, trying to stop it...")
+            time.sleep(2)
+        else:
+            raise Exception("Something is listening on port %s, can't start "
+                            " the server." % self.server_port)
+
+    def check_server_started(self):
+        for i in range(5):
+            if self._can_connect("/"):
+                return
+            time.sleep(2)
+        else:
+            raise Exception("The server is not listening on port %s after "
+                            "startup" % self.server_port)
+
+class WebApp(PortCheckerMixin):
     def __init__(self, runner):
         self.runner = runner
         self.image_store = {}
@@ -317,47 +378,23 @@ class WebApp(object):
 
         self.tests_path = None
         self.localtests_app = None
+        self.remotetests_app = None
 
-        for i in range(5):
-            if not self._can_connect("http://localhost:%s/stop" % WEBAPP_PORT):
-                break
-            log.info("Server already running, trying to stop it...")
-            time.sleep(2)
-        else:
-            raise Exception("Something is listening on port 8888, can't start "
-                            " the server.")
+        self.server_host = WEBAPP_HOST
+        self.server_port = WEBAPP_PORT
+        self.check_free_port()
 
         threading.Thread(target=self._run_server).start()
 
-        for i in range(5):
-            if self._can_connect("http://localhost:%s/" % WEBAPP_PORT):
-                self.runner.ua_string = None
-                return
-            time.sleep(2)
-        else:
-            raise Exception("The server is not listening on port 8888 after "
-                            "startup")
-
-    def _can_connect(self, url, verbose=False):
-        try:
-            urllib2.urlopen(url).read()
-        # XXX see why getting BadStatusLine sometimes.
-        except (urllib2.URLError, httplib.BadStatusLine):
-            e = sys.exc_info()[1]
-            log.debug("Exception in _can_connect: %s", e)
-            if isinstance(e, urllib2.HTTPError):
-                return True
-            # with 2.6 e.reason.errno can be used instead of e.reason.args[0]
-            if e.reason.args[0] == errno.ECONNREFUSED:
-                return False
-        return True
+        self.check_server_started()
+        self.runner.ua_string = None
 
     def _run_server(self):
         # NOTE: wsgiref.simple_server.make_server raises
         # "Hop-by-hop headers not allowed" when using the
         # paste.proxy.TransparentProxy application. There's no issue with
         # paste.httpserver
-        #server = simple_server.make_server("localhost", WEBAPP_PORT, self)
+        #server = simple_server.make_server(WEBAPP_HOST, WEBAPP_PORT, self)
 
         # Reduce some paste server noise
         logging.getLogger('paste').setLevel(logging.INFO)
@@ -365,7 +402,7 @@ class WebApp(object):
                                         start_loop=False)
 
         self.running = True
-        log.debug("Serving on http://localhost:%s" % WEBAPP_PORT)
+        log.debug("Serving on http://%s:%s" % (WEBAPP_HOST, WEBAPP_PORT))
 
         while self.running:
             #log.debug("Handling request")
@@ -381,6 +418,48 @@ class WebApp(object):
     def disable_localtests(self):
         self.tests_path = None
         self.localtests_app = None
+
+    def enable_remotetests(self, proxy_mappings, default_target_url):
+        """Set up a proxy to reach remote tests through another host.
+
+        Arguments:
+        proxy_mappings -- list of (source_url, target_url) mappings.
+        default_target_url -- The hostname and port of this URL is used for the
+                              default proxy destination.
+
+        Limitations:
+
+        The source host and port must be the same as the Web Application
+        (localhost:8888).
+        The target_url hostname and port must match the ones in the
+        default_target_url argument, or not be specified.
+        """
+        default_target_parseresult = urlparse.urlparse(default_target_url)
+        assert default_target_parseresult.scheme == "http"
+        target_netloc = default_target_parseresult.netloc
+
+        path_mappings = []
+
+        for (source, target) in proxy_mappings:
+            source_parseresult = urlparse.urlparse(source)
+            assert source_parseresult.scheme == "http"
+            assert source_parseresult.hostname == WEBAPP_HOST
+            assert source_parseresult.port == WEBAPP_PORT
+            target_parseresult = urlparse.urlparse(target)
+
+            assert target_parseresult.scheme in ("", "http")
+            assert target_parseresult.hostname == None or \
+                   target_parseresult.hostname == default_target_parseresult.hostname
+            assert target_parseresult.port == None or \
+                   target_parseresult.port == default_target_parseresult.port
+            path_mappings.append((source_parseresult.path,
+                                  target_parseresult.path))
+
+        self.remotetests_app = ProxyRemappingMiddleware(
+            TransparentProxy(force_host=target_netloc), path_mappings)
+
+    def disable_remotetests(self):
+        self.remotetests_app = None
 
     def _create_report(self, req, start_response):
         state = self.runner.get_state().copy()
@@ -437,12 +516,12 @@ class WebApp(object):
 </body>
         """ % state
 
-        start_response("200 OK", [('Content-type', 'text/html')])
+        start_response("200 OK", [("Content-type", "text/html")])
         return page
 
     def _handle_image_store(self, req, start_response):
         def return_500(msg):
-            start_response("500 Error", [('Content-type', 'text/plain')])
+            start_response("500 Error", [("Content-type", "text/plain")])
             return msg
 
         req.path_info_pop()
@@ -466,7 +545,7 @@ class WebApp(object):
                 del self.image_store[trim_index_start]
                 trim_index_start -= 1
 
-            start_response("200 OK", [('Content-type', 'text/plain')])
+            start_response("200 OK", [("Content-type", "text/plain")])
             return str(self.image_store_last_index)
 
         if req.path_info_peek() == "get":
@@ -478,7 +557,7 @@ class WebApp(object):
             if not index in self.image_store:
                 return return_500("No image at this index")
 
-            start_response("200 OK", [('Content-type', 'image/png')])
+            start_response("200 OK", [("Content-type", "image/png")])
             return self.image_store[index]
 
     def __call__(self, environ, start_response):
@@ -488,12 +567,12 @@ class WebApp(object):
             log.info("Received a /stop HTTP request, stopping the runner.")
             self.running = False
             self.runner.running = False
-            start_response("200 OK", [('Content-type', 'text/plain')])
+            start_response("200 OK", [("Content-type", "text/plain")])
             return "Stopping server"
 
         if not self.runner.running:
             start_response("500 Internal Server Error",
-                           [('Content-type', 'text/plain')])
+                           [("Content-type", "text/plain")])
             return "Error: The Runner is not running"
 
         if not self.runner.ua_string:
@@ -503,7 +582,7 @@ class WebApp(object):
             self.runner.ua_string and
             self.runner.ua_string != req.user_agent):
             start_response("500 Internal Server Error",
-                           [('Content-type', 'text/plain')])
+                           [("Content-type", "text/plain")])
             return (("The server received a request from a different user "
                      "agent.\n Original ua: %s\n This ua: %s\n"
                      "You should restart the server or use the original "
@@ -536,7 +615,9 @@ class WebApp(object):
 
         if self.localtests_app:
             return self.localtests_app(environ, start_response)
+        if self.remotetests_app:
+            return self.remotetests_app(environ, start_response)
 
         # Default response
-        start_response("404 Not found", [('Content-type', 'text/plain')])
+        start_response("404 Not found", [("Content-type", "text/plain")])
         return "Not found"

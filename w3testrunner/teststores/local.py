@@ -809,6 +809,7 @@ class LocalTestStore(TestStore):
         self.tests_path = store_info["path"]
         # tests_path shouldn't contain a trailing slash.
         self.tests_path = self.tests_path.strip().rstrip("\\/")
+        self.saved_tests = []
 
     def load(self):
         if not os.path.exists(self.tests_path):
@@ -842,9 +843,10 @@ class LocalTestStore(TestStore):
         self.runner.webapp.disable_localtests()
 
     def save(self):
+        self.saved_tests = self.runner.tests
         log.info("Test results:")
         statuses = []
-        for t in self.runner.tests:
+        for t in self.saved_tests:
             status = "not-run"
             if "result" in t:
                 status = t["result"]["status"]
@@ -856,13 +858,13 @@ class LocalTestStore(TestStore):
     @classmethod
     def add_options(cls, parser):
         parser.add_option("--tests-path",
-            help="Path to the tests to load")
+            help="(Local Test Store) Path to the tests to load")
 
     @classmethod
     def options_to_store_info(cls, options):
         if not options.tests_path:
             return None
         return {
-            "name": "local",
+            "name": cls.name,
             "path": options.tests_path,
         }

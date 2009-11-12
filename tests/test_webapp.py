@@ -20,18 +20,38 @@ class MockRunner(object):
             nouacheck = False
         self.options = MockOptions()
 
+class MockWebApp(object):
+    def __init__(self):
+        self.tests_path = None
+        self.proxy_mappings = None
+        self.default_target_url = None
+
+    def enable_localtests(self, tests_path):
+        self.tests_path = tests_path
+
+    def disable_localtests(self):
+        self.tests_path = None
+
+    def enable_remotetests(self, proxy_mappings, default_target_url):
+        self.proxy_mappings = proxy_mappings
+        self.default_target_url = default_target_url
+
+    def disable_remotetests(self):
+        self.proxy_mappings = None
+        self.default_target_url = None
+
 class TestWebApp(unittest.TestCase):
 
     @classmethod
-    def setupClass(cls):
+    def setup_class(cls):
         mock_runner = MockRunner()
         cls.webapp = WebApp(mock_runner)
 
     @classmethod
-    def teardownClass(cls):
+    def teardown_class(cls):
         cls.webapp.running = False
 
-    def testRoot(self):
+    def test_root(self):
         conn = httplib.HTTPConnection("localhost", 8888)
         conn.request("GET", "/")
         response = conn.getresponse()
@@ -43,7 +63,7 @@ class TestWebApp(unittest.TestCase):
         content = response.fp.read()
         self.assertTrue("W3TestRunner" in content)
 
-    def testCGI(self):
+    def test_cgi(self):
         conn = httplib.HTTPConnection("localhost", 8888)
         conn.request("GET", "/hello_cgi.py")
         response = conn.getresponse()
@@ -110,7 +130,7 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(response.reason, "Not found")
         self.assertEqual(response.getheader("content-type"), "text/plain")
 
-    def testHeaders(self):
+    def test_headers(self):
         conn = httplib.HTTPConnection("localhost", 8888)
         self.webapp.enable_localtests(webapp_data_dir)
 
@@ -134,3 +154,5 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(content, "Test content here\n")
 
         self.webapp.disable_localtests()
+
+    # TODO: test for the WebApp.enable_remotetests|disable_remotetests methods.

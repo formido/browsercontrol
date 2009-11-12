@@ -1,19 +1,16 @@
 import os
+import sys
 import unittest
 
 from w3testrunner.teststores.local import LocalTestStore
 
+try:
+    from test_webapp import MockWebApp
+except ImportError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
+    from test_webapp import MockWebApp
+
 local_data_dir = os.path.join(os.path.dirname(__file__), "local_data")
-
-class MockWebApp(object):
-    def __init__(self):
-        self.tests_path = None
-
-    def enable_localtests(self, tests_path):
-        self.tests_path = tests_path
-
-    def disable_localtests(self):
-        self.tests_path = None
 
 class MockRunner(object):
     def __init__(self):
@@ -35,7 +32,7 @@ class LocalTestsLoaderTest(unittest.TestCase):
                                     k in expected.keys()])
             self.assertEqual(actual_filtered, expected)
 
-    def testLoadSampleTests0(self):
+    def test_load_sample_tests_0(self):
         tests_dir = os.path.join(local_data_dir, "sample_tests_0")
 
         runner = MockRunner()

@@ -47,6 +47,7 @@ class Runner(object):
         self.batch = False
         self.browser = None
         self.tests_finished_event = threading.Event()
+        self.end_event = threading.Event()
         self.reset()
 
         # Guard in an exception handler so that the webapp can shutdown if
@@ -87,10 +88,10 @@ class Runner(object):
             log.info("The runner is started. You should now point your "
                      "browser to http://localhost:8888/")
 
+        self.running = True
         if not self.start_loop:
             return
 
-        self.running = True
         try:
             while self.running:
                 time.sleep(1)
@@ -100,6 +101,7 @@ class Runner(object):
                 os.kill(os.getpid(), signal.SIGKILL)
             sys.exit()
         log.info("End of main()")
+        self.end_event.set()
 
     def _options_to_store_info(self, options):
         store_infos = []
@@ -133,14 +135,14 @@ class Runner(object):
             log.info("Loading tests...")
             with runner_lock:
                 found_tests = self._do_load_tests()
-                if not found_tests:
-                    # TODO: wait a moment and try again to find tests?
-                    log.info("No tests found, terminating")
-                    break
+            if not found_tests:
+                # TODO: wait a moment and try again to find tests?
+                log.info("No tests found, terminating")
+                break
 
-                if not self.browser.is_alive():
-                    # TODO: catch exception and abort tests if we get one.
-                    self.browser.launch()
+            if not self.browser.is_alive():
+                # TODO: catch exception and abort tests if we get one.
+                self.browser.launch()
 
             log.debug("Waiting for tests to finish...")
             self.tests_finished_event.wait()
@@ -159,9 +161,10 @@ class Runner(object):
             if self.test_store.load_once:
                 break
 
-        self.browser.shutdown()
+        self.browser.cleanup()
         self.running = False
         self.webapp.running = False
+        self.end_event.set()
 
     def _set_tests(self, tests):
         self.tests = tests

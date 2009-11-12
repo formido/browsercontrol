@@ -81,7 +81,7 @@ class ImageComparator(object):
         try:
             return Image.open(StringIO.StringIO(output))
         except IOError, e:
-            raise Exception("Can't grab screenshot (missing package?)"
+            raise Exception("Can't grab screenshot (missing package?) "
                             "(exception: %s)" % e)
 
     def _take_screenshot_win32(self):
