@@ -266,6 +266,10 @@ class PythonCGIApplication(CGIApplication):
             if old:
                 old += '&'
             cgi_environ['QUERY_STRING'] = old + self.query_string
+
+        # When running the unit tests without nose, the script path is not
+        # absolute and tests fail.
+        self.script = os.path.abspath(self.script)
         cgi_environ['SCRIPT_FILENAME'] = self.script
         proc = subprocess.Popen(
             # Begin Paste modification.

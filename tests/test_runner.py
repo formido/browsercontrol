@@ -12,12 +12,12 @@ except ImportError:
 from lovely.jsonrpc import proxy
 from lovely.jsonrpc.proxy import RemoteException
 
-from test_teststores import test_remote
 import w3testrunner
 from w3testrunner.runner import Runner
 from w3testrunner.browsers.dummy import DummyBrowser
 from w3testrunner.browsers.manager import browsers_manager
 
+from test_teststores import test_remote
 import utils
 
 log = logging.getLogger(__name__)

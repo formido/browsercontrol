@@ -1,4 +1,5 @@
 import httplib
+import logging
 import os
 import unittest
 import urllib
@@ -47,9 +48,15 @@ class TestWebApp(unittest.TestCase):
         mock_runner = MockRunner()
         cls.webapp = WebApp(mock_runner)
 
+        # import here to prevent cyclic import.
+        from test_teststores import test_remote
+        cls.store_server = test_remote.StoreServer()
+        cls.store_server.ready_event.wait()
+
     @classmethod
     def teardown_class(cls):
         cls.webapp.running = False
+        cls.store_server.stop()
 
     def test_root(self):
         conn = httplib.HTTPConnection("localhost", 8888)
@@ -155,4 +162,45 @@ class TestWebApp(unittest.TestCase):
 
         self.webapp.disable_localtests()
 
-    # TODO: test for the WebApp.enable_remotetests|disable_remotetests methods.
+    def test_remotetests(self):
+        conn = httplib.HTTPConnection("localhost", 8888)
+
+        conn.request("GET", "/proxy.txt")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 404)
+
+        # import here to prevent cyclic import.
+        from test_teststores import test_remote
+        self.store_server.tests_path = webapp_data_dir
+        self.webapp.enable_remotetests((
+            ("http://localhost:8888/some_directory/", "/proxy_data/"),
+            ("http://localhost:8888/", "/proxy_data/"),
+        ), test_remote.STORE_SERVER_URL)
+
+        conn.request("GET", "/proxy.txt")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.reason, "OK")
+        content = response.fp.read()
+        self.assertEqual(content, "Dummy content.\n")
+
+        conn.request("GET", "/some_directory/proxy.txt")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.reason, "OK")
+        content = response.fp.read()
+        self.assertEqual(content, "Dummy content.\n")
+
+        self.store_server.reset()
+        self.webapp.disable_remotetests()
+
+        conn.request("GET", "/proxy.txt")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 404)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    TestWebApp.setup_class()
+    unittest.main()
+    TestWebApp.teardown_class()
