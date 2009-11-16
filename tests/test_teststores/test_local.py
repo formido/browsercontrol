@@ -9,6 +9,7 @@ try:
 except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
     from test_webapp import MockWebApp
+import utils
 
 local_data_dir = os.path.join(os.path.dirname(__file__), "local_data")
 
@@ -16,22 +17,8 @@ class MockRunner(object):
     def __init__(self):
         self.webapp = MockWebApp()
 
-class LocalTestsLoaderTest(unittest.TestCase):
 
-    def assertTestsEquals(self, actual_tests, expected_tests):
-        # XXX sort by id until deterministic test ordering is implemented in
-        # the test loader.
-        actual_tests = sorted(actual_tests, key=lambda t: t["id"])
-        expected_tests = sorted(expected_tests, key=lambda t: t["id"])
-
-        self.assertEqual(len(actual_tests), len(expected_tests))
-
-        for actual, expected in zip(actual_tests, expected_tests):
-            # Remove keys on the actual test that are not in the expected one.
-            actual_filtered = dict([(k, v) for (k, v) in actual.iteritems() if
-                                    k in expected.keys()])
-            self.assertEqual(actual_filtered, expected)
-
+class LocalTestsLoaderTest(utils.WTRTestCase):
     def test_load_sample_tests_0(self):
         tests_dir = os.path.join(local_data_dir, "sample_tests_0")
 

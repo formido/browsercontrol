@@ -83,7 +83,7 @@ class MockBrowser(BaseMockBrowser):
         }, True)
 
 
-class TestRunner(unittest.TestCase):
+class TestRunner(utils.WTRTestCase):
     def reset_and_load(self, client, runner):
         client.reset()
         runner._set_tests([{
@@ -281,8 +281,8 @@ class TestRunner(unittest.TestCase):
              'url2': None}
             ]
 
-            self.assertEqual(runner.test_store.saved_tests,
-                             expected_tests_with_results)
+            self.assertTestsEquals(runner.test_store.saved_tests,
+                                   expected_tests_with_results)
 
         self._exercise_browsers(MockBrowser, test_browser)
 
@@ -389,8 +389,8 @@ class TestRunner(unittest.TestCase):
                 'url': 'http://localhost:8888/test_frame_escape.html',
                 'url2': None}]
 
-            self.assertEqual(runner.test_store.saved_tests,
-                             expected_tests_with_results)
+            self.assertTestsEquals(runner.test_store.saved_tests,
+                                   expected_tests_with_results)
 
         self._exercise_browsers(MockBrowserTimingOut, test_browser)
 
