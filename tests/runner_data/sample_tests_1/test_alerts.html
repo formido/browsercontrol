@@ -1,0 +1,30 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test alert</title>
+  <script type="text/javascript" src="MochiKit/MochiKit.js"></script>
+  <script type="text/javascript" src="tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+You should see an alert().
+<script class="testbody" type="text/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+addLoadEvent(function() {
+    alert("Test lert")
+    ok(true, "should be true");
+});
+
+addLoadEvent(SimpleTest.finish);
+
+</script>
+</pre>
+</body>
+</html>

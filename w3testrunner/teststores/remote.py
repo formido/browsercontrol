@@ -93,7 +93,7 @@ class RemoteTestStore(TestStore):
                  "Only the test types in the list will be fetched.")
         parser.add_option("--filter-count", type="int",
             default=cls.DEFAULT_COUNT,
-            help="Remote Test Store) Number of tests to fetch.")
+            help="(Remote Test Store) Number of tests to fetch.")
         # TODO
         # --filter-path
         # --filter-testsuite

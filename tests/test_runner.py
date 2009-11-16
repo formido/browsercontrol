@@ -31,6 +31,7 @@ class BaseMockOptions(object):
     tests_path = None
     timeout = 0
     username = None
+    debug = False
 
 class BaseMockBrowser(DummyBrowser):
     name = "mockbrowser"
@@ -55,6 +56,8 @@ class BaseMockBrowser(DummyBrowser):
 class MockBrowser(BaseMockBrowser):
     def launch(self):
         super(MockBrowser, self).launch()
+
+        self.client.set_status(w3testrunner.runner.RUNNING, "Started tests.")
 
         self.client.test_started("test_mochi_pass.html")
         self.client.set_result("test_mochi_pass.html", {
@@ -107,6 +110,7 @@ class TestRunner(unittest.TestCase):
             'url2': None
         }])
         self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
+        client.set_status(w3testrunner.runner.RUNNING, "Started tests.")
 
     def test_rpc(self):
         runner = Runner(BaseMockOptions(), start_loop=False)
@@ -155,7 +159,7 @@ class TestRunner(unittest.TestCase):
         # testid of the test_started() call fails.
         self.reset_and_load(client, runner)
         client.test_started("test_mochi_pass.html")
-        self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
+        self.assertEqual(runner.status, w3testrunner.runner.RUNNING)
         self.assertRaises(RemoteException, client.set_result,
                           "<unknown_testid>", {}, True)
         self.assertEqual(runner.status, w3testrunner.runner.ERROR)
@@ -170,7 +174,7 @@ class TestRunner(unittest.TestCase):
         # Test that set_result() sets the result.
         self.reset_and_load(client, runner)
         client.test_started("test_mochi_pass.html")
-        self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
+        self.assertEqual(runner.status, w3testrunner.runner.RUNNING)
         client.set_result("test_mochi_pass.html", sample_result, True)
         actual_result = runner.testid_to_test["test_mochi_pass.html"]["result"]
         self.assertEqual(actual_result, sample_result)
@@ -281,7 +285,115 @@ class TestRunner(unittest.TestCase):
                              expected_tests_with_results)
 
         self._exercise_browsers(MockBrowser, test_browser)
-        # TODO: test timeout and automatic browser restart.
+
+    def test_batch_browsers_timeouts(self):
+        test_runner = self
+
+        class MockBrowserTimingOut(BaseMockBrowser):
+            def __init__(self, *args, **kwargs):
+                super(MockBrowserTimingOut, self).__init__(*args, **kwargs)
+                self._state = 0
+                MockBrowserTimingOut.terminate_call_count = 0
+
+            def launch(self):
+                super(MockBrowserTimingOut, self).launch()
+
+                if self._state == 0:
+                    self.client.set_status(w3testrunner.runner.RUNNING,
+                                           "Started tests.")
+                    self.client.test_started("test_alerts.html")
+                elif self._state == 1:
+                    self.client.set_status(w3testrunner.runner.RUNNING,
+                                           "Started tests.")
+                    self.client.test_started("reftests/reftest:13830c0691ff1351423206a9a156ea45")
+
+                    res = self.client.take_screenshot1()
+                    test_runner.assertTrue(res["success"],
+                                           "Failed to take screenshot: %s" %
+                                           res.get("message"))
+                    test_runner.assertTrue("screenshot1_id" in res)
+                elif self._state == 2:
+                    self.client.set_status(w3testrunner.runner.RUNNING,
+                                           "Started tests.")
+                    self.client.test_started("test_frame_escape.html")
+                else:
+                    assert False, "Unknown state, launch() was called too " \
+                                  "many times."
+
+                self._state += 1
+
+            def terminate(self):
+                super(MockBrowserTimingOut, self).terminate()
+                MockBrowserTimingOut.terminate_call_count += 1
+
+
+        class MockImageComparator(object):
+            def __init__(self):
+                self.grabbed_image = False
+
+            def grab_image1(self):
+                assert not self.grabbed_image
+                self.grabbed_image = True
+
+        def test_browser(browser_name):
+            class MockOptions(BaseMockOptions):
+                browser =  browser_name
+                tests_path = os.path.join(runner_data_dir, "sample_tests_1")
+                timeout = 2
+
+            runner = Runner(MockOptions(), start_loop=False)
+            runner.browser.runner = runner
+            if browser_name == "mockbrowser":
+                mock_image_comparator = MockImageComparator()
+                runner.webapp.rpc.image_comparator = mock_image_comparator
+            runner.end_event.wait()
+            if browser_name == "mockbrowser":
+                self.assertTrue(mock_image_comparator.grabbed_image)
+                self.assertEqual(MockBrowserTimingOut.terminate_call_count, 2)
+
+            expected_tests_with_results = [
+               {'equal': None,
+                'expected': None,
+                'failure_type': None,
+                'file': 'test_alerts.html',
+                'file2': None,
+                'full_id': 'test_alerts.html',
+                'id': 'test_alerts.html',
+                'result': {'status': 'timeout',
+                           'status_message': 'Timeout detected from server side'},
+                'type': 'mochitest',
+                'url': 'http://localhost:8888/test_alerts.html',
+                'url2': None},
+               {'equal': True,
+                'expected': 0,
+                'failure_type': '',
+                'file': 'reftests/ref_pass.html',
+                'file2': 'reftests/frame_escape.html',
+                'full_id': 'reftests/reftest:== ref_pass.html frame_escape.html',
+                'id': 'reftests/reftest:13830c0691ff1351423206a9a156ea45',
+                'result': {'status': 'timeout',
+                           'status_message': 'Timeout detected from server side'},
+                'type': 'reftest',
+                'url': 'http://localhost:8888/reftests/ref_pass.html',
+                'url2': 'http://localhost:8888/reftests/frame_escape.html'},
+               {'equal': None,
+                'expected': None,
+                'failure_type': None,
+                'file': 'test_frame_escape.html',
+                'file2': None,
+                'full_id': 'test_frame_escape.html',
+                'id': 'test_frame_escape.html',
+                'result': {'status': 'timeout',
+                           'status_message': 'Timeout detected from server side'},
+                'type': 'mochitest',
+                'url': 'http://localhost:8888/test_frame_escape.html',
+                'url2': None}]
+
+            self.assertEqual(runner.test_store.saved_tests,
+                             expected_tests_with_results)
+
+        self._exercise_browsers(MockBrowserTimingOut, test_browser)
+
 
     @classmethod
     def setup_class(cls):

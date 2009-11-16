@@ -372,7 +372,7 @@ class WebApp(PortCheckerMixin):
                             cache_max_age=60))
 
         self.rpc = RPC(self)
-        rpcdispatcher = dispatcher.JSONRPCDispatcher(RPC(self), json_impl=json)
+        rpcdispatcher = dispatcher.JSONRPCDispatcher(self.rpc, json_impl=json)
         self.rpcapp = wsgi.WSGIJSONRPCApplication({'rpc': rpcdispatcher})
         self.rpcapp = RPCErrorMiddleware(self.rpcapp, self.runner)
 

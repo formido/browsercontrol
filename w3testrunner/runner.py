@@ -16,7 +16,15 @@ from w3testrunner.browsers.manager import browsers_manager
 
 log = logging.getLogger(__name__)
 
-NEEDS_TESTS, RUNNING, FINISHED, STOPPED, ERROR = range(5)
+# Keep this in sync with the statuses in
+# w3testrunner/resources/testrunner/testrunner.jsrunner.py, order matters.
+# TODO: remove the NEEDS_TESTS state. It should simply be STOPPED when there
+# are no tests loaded.
+STATUSES = "INITIALIZING NEEDS_TESTS RUNNING FINISHED STOPPED ERROR"
+STATUS_TO_NAME = {}
+for value, name in enumerate(STATUSES.split()):
+    locals()[name] = value
+    STATUS_TO_NAME[value] = name
 
 # from http://code.activestate.com/recipes/465057/
 def synchronized(lock):
@@ -87,6 +95,8 @@ class Runner(object):
 
             log.info("The runner is started. You should now point your "
                      "browser to http://localhost:8888/")
+            # TODO: uncomment once NEEDS_TESTS is removed.
+            #self.status = STOPPED
 
         self.running = True
         if not self.start_loop:
@@ -126,40 +136,55 @@ class Runner(object):
         assert len(store_classes) == 1, "Duplicate stores?"
         return store_classes[0](self, store_info)
 
+    def _launch_browser(self):
+        if not self.browser:
+            return
+        old_status = self.status
+        old_status_message = self.status_message
+        self.set_status(INITIALIZING, "Initializing browser")
+        self.browser.launch()
+        self.set_status(old_status, old_status_message)
+
     def _main_loop(self):
         log.debug("in main_loop %s", self)
 
-        self.browser.terminate()
+        try:
+            self.browser.terminate()
 
-        while True:
-            log.info("Loading tests...")
-            with runner_lock:
-                found_tests = self._do_load_tests()
-            if not found_tests:
-                # TODO: wait a moment and try again to find tests?
-                log.info("No tests found, terminating")
-                break
+            while True:
+                log.info("Loading tests...")
+                with runner_lock:
+                    found_tests = self._do_load_tests()
+                if not found_tests:
+                    # TODO: wait a moment and try again to find tests?
+                    log.info("No tests found, terminating")
+                    break
 
-            if not self.browser.is_alive():
-                # TODO: catch exception and abort tests if we get one.
-                self.browser.launch()
+                self._launch_browser()
 
-            log.debug("Waiting for tests to finish...")
-            self.tests_finished_event.wait()
-            self.tests_finished_event.clear()
-            log.debug("...Finished waiting for end of tests")
+                log.debug("Waiting for tests to finish...")
+                self.tests_finished_event.wait()
+                self.tests_finished_event.clear()
+                log.debug("...Finished waiting for end of tests")
 
-            with runner_lock:
-                self.test_store.save()
-            if self.status == ERROR:
-                log.error("\n\nError encountered while running tests, "
-                          "terminating.\n Status message: %s\n\n",
-                          self.status_message)
-                break
+                with runner_lock:
+                    self.test_store.save()
+                if self.status == ERROR:
+                    break
 
-            self.reset()
-            if self.test_store.load_once:
-                break
+                self.reset()
+                if self.test_store.load_once:
+                    break
+        except Exception, e:
+            self.set_status(ERROR, "Exception in _main_loop: %s" % e)
+            if self.tests:
+                with runner_lock:
+                    self.test_store.save()
+
+        if self.status == ERROR:
+            log.error("\n\nError encountered while running tests, "
+                      "terminating.\n Status message: %s\n\n",
+                      self.status_message)
 
         self.browser.cleanup()
         self.running = False
@@ -186,6 +211,13 @@ class Runner(object):
         self.hang_timer = None
         self.last_hung_testid = None
 
+    def _ensure_status(self, *allowed_statuses):
+        if self.status in allowed_statuses:
+            return
+        raise Exception("Unexpected status %r. Allowed statuses are: %r" % (
+                        STATUS_TO_NAME[self.status],
+                        [STATUS_TO_NAME[s] for s in allowed_statuses]))
+
     @synchronized(runner_lock)
     def reset(self):
         self._stop_hang_timer()
@@ -201,6 +233,7 @@ class Runner(object):
 
     @synchronized(runner_lock)
     def clear_results(self):
+        self._ensure_status(STOPPED, RUNNING)
         for test in self.tests:
             if "result" in test:
                 del test["result"]
@@ -221,6 +254,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def load_tests(self, store_info):
         log.info("Loading tests using store_info: %s", store_info)
+        self._ensure_status(NEEDS_TESTS, STOPPED, FINISHED)
         self.reset()
 
         self.test_store = self._create_store(store_info)
@@ -245,10 +279,8 @@ class Runner(object):
         status = "timeout"
         status_message = "Timeout detected from server side"
 
-        crashed = False
         if self.browser and not self.browser.is_alive():
             log.debug("Detected browser crash")
-            crashed = True
             status = "crash"
             status_message = "Browser crash detected from server side"
 
@@ -258,10 +290,13 @@ class Runner(object):
         }, True)
         self.running_test = None
 
-        if crashed:
-            log.debug("Restarting browser")
-            # TODO: catch exception and abort tests.
-            self.browser.launch()
+        if self.tests_finished_event.is_set():
+            return
+        try:
+            self._launch_browser()
+        except BrowserException, e:
+            self.set_status(ERROR, "Exception while restarting the "
+                                   "browser: %s" % e)
 
     @synchronized(runner_lock)
     def set_status(self, status, message):
@@ -289,6 +324,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def test_started(self, testid):
         log.info("Test %s started", testid)
+        self._ensure_status(RUNNING)
         test = self._get_test(testid)
         if "result" in test:
             raise Exception("Starting a test which already has a result "
@@ -320,6 +356,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def suspend_timer(self, testid, suspended):
         log.debug("suspend_timer testid: %s, suspended: %s", testid, suspended)
+        self._ensure_status(RUNNING, STOPPED)
         test = self._get_test(testid)
         self._ensure_running_test(testid)
 
@@ -331,6 +368,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def set_result(self, testid, result, did_start_notify):
         log.info("Saving result for testid: %s", testid)
+        self._ensure_status(RUNNING, STOPPED, FINISHED)
 
         self._stop_hang_timer()
         test = self._get_test(testid)

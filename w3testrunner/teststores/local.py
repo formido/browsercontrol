@@ -845,6 +845,9 @@ class LocalTestStore(TestStore):
     def save(self):
         self.saved_tests = self.runner.tests
         log.info("Test results:")
+        if self.runner.options.debug:
+            import pprint
+            pprint.pprint(self.saved_tests)
         statuses = []
         for t in self.saved_tests:
             status = "not-run"

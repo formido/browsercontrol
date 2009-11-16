@@ -178,6 +178,13 @@ body.status-running #framelocator {
   white-space: pre;
 }
 
+body.status-initializing #initializingBox {
+  display: block;
+}
+#initializingBox {
+  display: none;
+}
+
 .footer {
   margin-top: 3em;
   text-align: center;

@@ -49,7 +49,8 @@ var TestRunner = TR = {
 
   _params: {},
   // Keep this in sync with the statuses in runner.py, order matters.
-  _statusStrings: ["NEEDS_TESTS", "RUNNING", "FINISHED", "STOPPED", "ERROR"],
+  _statusStrings: ["INITIALIZING", "NEEDS_TESTS", "RUNNING", "FINISHED",
+                   "STOPPED", "ERROR"],
   _statuses: {},
 
   rpc: function(method, params, success, sync) {
@@ -209,7 +210,9 @@ var TestRunner = TR = {
   },
 
   canRunTests: function() {
-    return this._state.status != RUNNING && this._state.status != ERROR;
+    return this._state.status != INITIALIZING &&
+           this._state.status != RUNNING &&
+           this._state.status != ERROR;
     // TODO: show in the UI that the tests couldn't be run?
   },
 
@@ -330,14 +333,15 @@ var TestRunner = TR = {
 
     $("#startButton").toggle(this.canRunTests() &&
                              (this._counters.done < testCount));
+    var busy = status == INITIALIZING || status == RUNNING;
     $("#stopButton").toggle(status == RUNNING);
-    $("#loadTestsButton").toggle(status != RUNNING);
-    $("#saveResultsButton").toggle(status != RUNNING &&
+    $("#loadTestsButton").toggle(!busy);
+    $("#saveResultsButton").toggle(!busy &&
                                    this._counters.done > 0);
-    $("#clearResultsButton").toggle(status != RUNNING &&
+    $("#clearResultsButton").toggle(!busy &&
                                     status != ERROR &&
                                     this._counters.done > 0);
-    $("#resetButton").toggle(status != RUNNING);
+    $("#resetButton").toggle(!busy);
 
     $("#status").text(this._statusStrings[status]);
     // TODO: strip the message if too long, or use CSS.
@@ -516,6 +520,15 @@ var TestRunner = TR = {
 
       if (this._state.status == RUNNING)
         this.runAllTests();
+
+      if (this._state.status == INITIALIZING) {
+        $("#initializingDots").text($("#initializingDots").text() + ".");
+        setTimeout(function() {
+          TR.loadState();
+        }, 1000);
+      } else {
+        $("#initializingDots").text(".");
+      }
     });
   },
 
