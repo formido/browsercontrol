@@ -137,13 +137,13 @@ class TestRunner(utils.WTRTestCase):
 
     def test_rpc(self):
         runner = Runner(BaseMockOptions(), start_loop=False)
-        self.assertEqual(runner.status, w3testrunner.runner.NEEDS_TESTS)
+        self.assertEqual(runner.status, w3testrunner.runner.STOPPED)
 
         client = proxy.ServerProxy('http://localhost:8888/rpc', json_impl=json)
         state = client.get_state()
         self.assertEqual(state, {
             u'batch': False,
-            u'status': w3testrunner.runner.NEEDS_TESTS,
+            u'status': w3testrunner.runner.STOPPED,
             u'status_message': u'',
             u'tests': [],
             u'timeout': 0,

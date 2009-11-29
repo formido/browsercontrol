@@ -49,8 +49,7 @@ var TestRunner = TR = {
 
   _params: {},
   // Keep this in sync with the statuses in runner.py, order matters.
-  _statusStrings: ["INITIALIZING", "NEEDS_TESTS", "RUNNING", "FINISHED",
-                   "STOPPED", "ERROR"],
+  _statusStrings: ["INITIALIZING", "RUNNING", "FINISHED", "STOPPED", "ERROR"],
   _statuses: {},
 
   rpc: function(method, params, success, sync) {
@@ -507,7 +506,7 @@ var TestRunner = TR = {
       this.updateUI();
       this.updateTestsTable();
 
-      if (this._state.status == NEEDS_TESTS) {
+      if (this._counters.total == 0 && this._state.status == STOPPED) {
         $("#loadTestsBox").show();
         return;
       }

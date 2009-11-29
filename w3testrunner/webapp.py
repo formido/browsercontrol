@@ -466,10 +466,11 @@ class WebApp(PortCheckerMixin):
         self.remotetests_app = None
 
     def _create_report(self, req, start_response):
+        # import here to prevent cyclic import.
+        from w3testrunner import runner
+
         state = self.runner.get_state().copy()
-        state["status_pretty"] = [
-            "NEEDS_TESTS", "RUNNING", "FINISHED", "STOPPED", "ERROR"
-        ][state["status"]]
+        state["status_pretty"] = runner.STATUS_TO_NAME[state["status"]]
 
         result_rows = []
         for test in state["tests"]:

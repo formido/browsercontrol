@@ -19,9 +19,7 @@ log = logging.getLogger(__name__)
 
 # Keep this in sync with the statuses in
 # w3testrunner/resources/testrunner/testrunner.jsrunner.py, order matters.
-# TODO: remove the NEEDS_TESTS state. It should simply be STOPPED when there
-# are no tests loaded.
-STATUSES = "INITIALIZING NEEDS_TESTS RUNNING FINISHED STOPPED ERROR"
+STATUSES = "INITIALIZING RUNNING FINISHED STOPPED ERROR"
 STATUS_TO_NAME = {}
 for value, name in enumerate(STATUSES.split()):
     locals()[name] = value
@@ -98,8 +96,7 @@ class Runner(object):
 
             log.info("The runner is started. You should now point your "
                      "browser to http://localhost:8888/")
-            # TODO: uncomment once NEEDS_TESTS is removed.
-            #self.status = STOPPED
+            self.status = STOPPED
 
         self.running = True
         if not self.start_loop:
@@ -265,7 +262,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def reset(self):
         self._stop_hang_timer()
-        self.status = NEEDS_TESTS
+        self.status = STOPPED
         self.status_message = ""
         self._ua_string = None
         self.testid_to_test = {}
@@ -277,7 +274,7 @@ class Runner(object):
 
     @synchronized(runner_lock)
     def clear_results(self):
-        self._ensure_status(STOPPED, RUNNING)
+        self._ensure_status(STOPPED, RUNNING, FINISHED)
         for test in self.tests:
             if "result" in test:
                 del test["result"]
@@ -298,7 +295,7 @@ class Runner(object):
     @synchronized(runner_lock)
     def load_tests(self, store_info):
         log.info("Loading tests using store_info: %s", store_info)
-        self._ensure_status(NEEDS_TESTS, STOPPED, FINISHED)
+        self._ensure_status(STOPPED, FINISHED)
         self.reset()
 
         self.test_store = self._create_store(store_info)
