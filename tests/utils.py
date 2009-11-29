@@ -24,6 +24,18 @@ class WTRTestCase(unittest.TestCase):
                                     k in expected.keys()])
             self.assertEqual(actual_filtered, expected)
 
+    def assertDictEquals(self, d1, d2):
+        """
+        Wraps assertEqual() to print more detailed information when comparing
+        dicts.
+        """
+        for k in set(d1.keys()) | set(d2.keys()):
+            if d1.get(k) != d2.get(k) or not k in d1 or not k in d2:
+                print "Key mismatch: %s: %s != %s: %s" % (
+                    k if k in d1 else "<no key>", d1.get(k),
+                    k if k in d2 else "<no key>", d2.get(k))
+        self.assertEqual(d1, d2)
+
 def browser_names_to_test():
     if not "WTR_BROWSER_NAMES_TO_TEST" in os.environ:
         log.info("Only testing dummy browser because the "

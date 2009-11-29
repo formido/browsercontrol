@@ -13,9 +13,11 @@ from lovely.jsonrpc import proxy
 from lovely.jsonrpc.proxy import RemoteException
 
 import w3testrunner
+from w3testrunner import runner
 from w3testrunner.runner import Runner
 from w3testrunner.browsers.dummy import DummyBrowser
 from w3testrunner.browsers.manager import browsers_manager
+from w3testrunner.teststores import remote
 
 from test_teststores import test_remote
 import utils
@@ -35,6 +37,8 @@ class BaseMockOptions(object):
 
 class BaseMockBrowser(DummyBrowser):
     name = "mockbrowser"
+    POLL_INTERVAL_SECONDS = 0.5
+    MAX_POLL = 10
 
     def __init__(self, *args, **kwargs):
         super(BaseMockBrowser, self).__init__(*args, **kwargs)
@@ -53,10 +57,27 @@ class BaseMockBrowser(DummyBrowser):
                                         json_impl=json,
                                         transport_impl=JSONRPCTransport)
 
-class MockBrowser(BaseMockBrowser):
     def launch(self):
-        super(MockBrowser, self).launch()
+        super(BaseMockBrowser, self).launch()
+        threading.Thread(target=self._poll_webapp_until_ready).start()
 
+    def _poll_webapp_until_ready(self):
+        for i in range(self.MAX_POLL):
+            time.sleep(self.POLL_INTERVAL_SECONDS)
+            # FIXME: sometimes get_state() raises an exception.
+            try:
+                state = self.client.get_state()
+            except IOError, e:
+                log.warn("IOError when calling get_state(): %s", e)
+                continue
+            if state["status"] != runner.INITIALIZING:
+                break
+        else:
+            raise Exception("Webapp not ready after %s tries." % self.MAX_POLL)
+        self.on_webapp_ready()
+
+class MockBrowser(BaseMockBrowser):
+    def on_webapp_ready(self):
         self.client.set_status(w3testrunner.runner.RUNNING, "Started tests.")
 
         self.client.test_started("test_mochi_pass.html")
@@ -82,6 +103,8 @@ class MockBrowser(BaseMockBrowser):
             u'status': u'pass'
         }, True)
 
+# Uncomment when debugging.
+#logging.basicConfig(level=logging.DEBUG)
 
 class TestRunner(utils.WTRTestCase):
     def reset_and_load(self, client, runner):
@@ -118,14 +141,14 @@ class TestRunner(utils.WTRTestCase):
 
         client = proxy.ServerProxy('http://localhost:8888/rpc', json_impl=json)
         state = client.get_state()
-        self.assertEqual({
+        self.assertEqual(state, {
             u'batch': False,
             u'status': w3testrunner.runner.NEEDS_TESTS,
             u'status_message': u'',
             u'tests': [],
             u'timeout': 0,
             u'ua_string': u'lovey.jsonpc.proxy (httplib)'
-        }, state)
+        })
 
         # TODO: Test the following RPC methods:
         #
@@ -295,9 +318,7 @@ class TestRunner(utils.WTRTestCase):
                 self._state = 0
                 MockBrowserTimingOut.terminate_call_count = 0
 
-            def launch(self):
-                super(MockBrowserTimingOut, self).launch()
-
+            def on_webapp_ready(self):
                 if self._state == 0:
                     self.client.set_status(w3testrunner.runner.RUNNING,
                                            "Started tests.")
@@ -317,15 +338,14 @@ class TestRunner(utils.WTRTestCase):
                                            "Started tests.")
                     self.client.test_started("test_frame_escape.html")
                 else:
-                    assert False, "Unknown state, launch() was called too " \
-                                  "many times."
+                    assert False, "Unknown state (%s), launch() was called too " \
+                                  "many times." % self._state
 
                 self._state += 1
 
             def terminate(self):
                 super(MockBrowserTimingOut, self).terminate()
                 MockBrowserTimingOut.terminate_call_count += 1
-
 
         class MockImageComparator(object):
             def __init__(self):
@@ -461,12 +481,33 @@ class TestRunner(utils.WTRTestCase):
                 filter_types = None
                 filter_count = 50
 
+            self.assertEqual(len(self.store_server.load_requests), 0)
             runner = Runner(MockOptions(), start_loop=False)
             runner.end_event.wait()
 
             self.assertEquals(self.store_server.tests_data, [])
-            self.assertEquals(self.store_server.results, [
-                [
+            # Two load requests should be performed. The second will return no
+            # tests and the runner will stop.
+            expected_load_request = {
+                "username": "alice",
+                "token": "a_token",
+                "protocol_version": remote.RemoteTestStore.PROTOCOL_VERSION,
+                # metadata is environment specific.
+                "metadata": self.store_server.load_requests[0]["metadata"],
+                "types": None,
+                "count": 50,
+            }
+            self.assertEquals(self.store_server.load_requests, [
+                expected_load_request, expected_load_request,
+            ])
+            self.assertEquals(len(self.store_server.save_requests), 1)
+            self.assertDictEquals(self.store_server.save_requests[0], {
+                "username": "alice",
+                "token": "a_token",
+                "protocol_version": remote.RemoteTestStore.PROTOCOL_VERSION,
+                # metadata is environment specific.
+                "metadata": self.store_server.save_requests[0]["metadata"],
+                "results": [
                     {
                         u'testid': u'reftests/reftest:a3e11f282c81ad5492950595618f9ed1',
                         u'status': u'pass',
@@ -484,7 +525,7 @@ class TestRunner(utils.WTRTestCase):
                         u'log': u'0 | pass | true is not true\n', u'testid': u'test_browser_pass.html'
                     }
                 ]
-            ])
+            })
             self.store_server.reset()
 
         self._exercise_browsers(MockBrowser, test_browser)

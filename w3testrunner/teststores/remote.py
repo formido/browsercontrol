@@ -52,10 +52,11 @@ class RemoteTestStore(TestStore):
                                  response["error"])
         return response
 
-    def load(self):
+    def load(self, metadata):
         request = {
+            "metadata": metadata,
             "types": self.store_info.get("types"),
-            "count":self.store_info.get("count"),
+            "count": self.store_info.get("count"),
         }
         load_response = self._send_server(request, RemoteTestStore.LOAD_PATH)
 
@@ -65,10 +66,7 @@ class RemoteTestStore(TestStore):
 
         return load_response["tests"]
 
-    def cleanup(self):
-        self.runner.webapp.disable_remotetests()
-
-    def save(self):
+    def save(self, metadata):
         results = []
         for test in self.runner.tests:
             result = test.get("result", {})
@@ -77,9 +75,13 @@ class RemoteTestStore(TestStore):
 
         log.debug("Saving results: %s", results)
         request = {
+            "metadata": metadata,
             "results": results,
         }
         self._send_server(request, RemoteTestStore.SAVE_PATH)
+
+    def cleanup(self):
+        self.runner.webapp.disable_remotetests()
 
     @classmethod
     def add_options(cls, parser):

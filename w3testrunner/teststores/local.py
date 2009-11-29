@@ -811,7 +811,7 @@ class LocalTestStore(TestStore):
         self.tests_path = self.tests_path.strip().rstrip("\\/")
         self.saved_tests = []
 
-    def load(self):
+    def load(self, metadata):
         if not os.path.exists(self.tests_path):
             raise StoreException("Tests path '%s' does not exist" %
                                    self.tests_path)
@@ -839,10 +839,7 @@ class LocalTestStore(TestStore):
         self.runner.webapp.enable_localtests(self.tests_path)
         return tests
 
-    def cleanup(self):
-        self.runner.webapp.disable_localtests()
-
-    def save(self):
+    def save(self, metadata):
         self.saved_tests = self.runner.tests
         log.info("Test results:")
         if self.runner.options.debug:
@@ -857,6 +854,9 @@ class LocalTestStore(TestStore):
             statuses.append(status)
         for k, g in itertools.groupby(sorted(statuses)):
             log.info("    %s: %s", k, len(list(g)))
+
+    def cleanup(self):
+        self.runner.webapp.disable_localtests()
 
     @classmethod
     def add_options(cls, parser):

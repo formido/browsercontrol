@@ -74,10 +74,11 @@ class HTTPHandler(SimpleHTTPRequestHandler):
             return {
                 "error": "No tests are available."
             }
+        self.server.store_server.load_requests.append(request)
         return self.server.store_server.tests_data.pop(0)
 
     def _save_results(self, request):
-        self.server.store_server.results.append(request["results"])
+        self.server.store_server.save_requests.append(request)
         return {
             "error": None,
         }
@@ -152,7 +153,6 @@ class StoreServer(PortCheckerMixin):
         self.shutdown_complete_event = threading.Event()
         self.ready_event = threading.Event()
         self.httpd_running = False
-        self.results = None
         self.reset()
         self.server_port = STORE_SERVER_PORT
 
@@ -189,7 +189,8 @@ class StoreServer(PortCheckerMixin):
         self.tests_data = {
             "error": "No tests data available"
         }
-        self.results = []
+        self.load_requests = []
+        self.save_requests = []
         self.tests_path = None
 
 class MockRunner(object):
@@ -242,7 +243,17 @@ class TestRemoteStore(unittest.TestCase):
         }
         mock_runner = MockRunner()
         remote_store = RemoteTestStore(mock_runner, store_info)
-        tests = remote_store.load()
+        sample_metadata = {"meta_name": "meta_value"}
+        tests = remote_store.load(sample_metadata)
+        self.assertEquals(self.store_server.load_requests, [{
+            "username": "alice",
+            "token": "a_token",
+            "protocol_version": RemoteTestStore.PROTOCOL_VERSION,
+            "metadata": sample_metadata,
+            "types": None,
+            "count": None,
+        }])
+        self.assertEquals(self.store_server.save_requests, [])
         self.assertEquals(self.store_server.tests_data, [],
                           "tests_data wasn't consumed")
 
@@ -291,10 +302,16 @@ class TestRemoteStore(unittest.TestCase):
          'url': 'http://localhost:8888/test_mochi_pass.html',
          'url2': None}]
 
-        self.assertEquals(self.store_server.results, [])
-        remote_store.save()
-        self.assertEquals(self.store_server.results, [
-            [
+        self.assertEquals(len(self.store_server.load_requests), 1)
+        self.assertEquals(self.store_server.save_requests, [])
+        remote_store.save(sample_metadata)
+        self.assertEquals(len(self.store_server.load_requests), 1)
+        self.assertEquals(self.store_server.save_requests, [{
+            "username": "alice",
+            "token": "a_token",
+            "metadata": sample_metadata,
+            "protocol_version": RemoteTestStore.PROTOCOL_VERSION,
+            "results": [
                 {
                     u'testid': u'reftests/reftest:a3e11f282c81ad5492950595618f9ed1',
                     u'status': u'pass',
@@ -307,7 +324,7 @@ class TestRemoteStore(unittest.TestCase):
                     u'log': u'TEST-PASS | http://localhost:8888/test_mochi_pass.html | Should pass\n',
                 }
             ]
-        ])
+        }])
 
         remote_store.cleanup()
         self.assertEquals(mock_runner.webapp.proxy_mappings, None)
@@ -326,8 +343,8 @@ class TestRemoteStore(unittest.TestCase):
         remote_store = RemoteTestStore(mock_runner, store_info)
         old_supported_protocol_version = HTTPHandler.SUPPORTED_PROTOCOL_VERSION
         HTTPHandler.SUPPORTED_PROTOCOL_VERSION = 99
-        self.assertRaises(StoreException, remote_store.load)
-        self.assertRaises(StoreException, remote_store.save)
+        self.assertRaises(StoreException, remote_store.load, {})
+        self.assertRaises(StoreException, remote_store.save, {})
         HTTPHandler.SUPPORTED_PROTOCOL_VERSION = old_supported_protocol_version
 
     def test_invalid_token(self):
@@ -341,8 +358,8 @@ class TestRemoteStore(unittest.TestCase):
         }
         mock_runner = MockRunner()
         remote_store = RemoteTestStore(mock_runner, store_info)
-        self.assertRaises(StoreException, remote_store.load)
-        self.assertRaises(StoreException, remote_store.save)
+        self.assertRaises(StoreException, remote_store.load, {})
+        self.assertRaises(StoreException, remote_store.save, {})
 
 
     def test_invalid_username(self):
@@ -356,8 +373,8 @@ class TestRemoteStore(unittest.TestCase):
         }
         mock_runner = MockRunner()
         remote_store = RemoteTestStore(mock_runner, store_info)
-        self.assertRaises(StoreException, remote_store.load)
-        self.assertRaises(StoreException, remote_store.save)
+        self.assertRaises(StoreException, remote_store.load, {})
+        self.assertRaises(StoreException, remote_store.save, {})
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

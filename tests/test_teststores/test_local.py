@@ -29,7 +29,7 @@ class LocalTestsLoaderTest(utils.WTRTestCase):
         }
         store = LocalTestStore(runner, store_info)
         self.assertEqual(runner.webapp.tests_path, None)
-        tests = store.load()
+        tests = store.load({})
         self.assertEqual(runner.webapp.tests_path, tests_dir)
 
         expected_tests = [{
@@ -67,5 +67,8 @@ class LocalTestsLoaderTest(utils.WTRTestCase):
             'url2': None
         }]
         self.assertTestsEquals(tests, expected_tests)
+
+        # TODO: test store.save()
+
         store.cleanup()
         self.assertEqual(runner.webapp.tests_path, None)

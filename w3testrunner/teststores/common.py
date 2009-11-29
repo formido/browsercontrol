@@ -9,14 +9,14 @@ class TestStore(object):
         self.runner = runner
         self.store_info = store_info
 
-    def load(self):
+    def load(self, metadata):
         """Load the tests and return them as a list.
 
         Implementors may also need to setup environment for running the loaded
         tests."""
         raise NotImplemented()
 
-    def save(self):
+    def save(self, metadata):
         """Save the tests results."""
         pass
 
